@@ -5,6 +5,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"trackway/internal/config"
 	"trackway/internal/logstore"
@@ -52,9 +53,17 @@ func TestApplyStatusTransitions(t *testing.T) {
 	target := svc.targets[0]
 
 	ctx := context.Background()
-	svc.applyStatus(ctx, target, false) // init down => alert
-	svc.applyStatus(ctx, target, false) // unchanged => no alert
-	svc.applyStatus(ctx, target, true)  // recovered => alert
+	var events []alertEvent
+	if ev := svc.applyStatus(target, false); ev != nil {
+		events = append(events, *ev)
+	}
+	if ev := svc.applyStatus(target, false); ev != nil {
+		events = append(events, *ev)
+	}
+	if ev := svc.applyStatus(target, true); ev != nil {
+		events = append(events, *ev)
+	}
+	svc.sendAlertBatch(ctx, events)
 
 	if len(notifier.defaults) != 2 {
 		t.Fatalf("expected 2 alerts, got %d", len(notifier.defaults))
@@ -72,6 +81,37 @@ func TestApplyStatusTransitions(t *testing.T) {
 	}
 	if rows[0].Reason != "INIT" || rows[1].Reason != "CHANGE" {
 		t.Fatalf("unexpected reasons: %+v", rows)
+	}
+}
+
+func TestSendAlertBatchCombinesSameKind(t *testing.T) {
+	t.Parallel()
+
+	store, err := logstore.New(t.TempDir())
+	if err != nil {
+		t.Fatalf("logstore init error: %v", err)
+	}
+	notifier := &fakeNotifier{}
+	svc := New(testConfig(), store, notifier)
+
+	now := time.Now().UTC()
+	events := []alertEvent{
+		{Kind: "DOWN", Target: "a", Address: "10.0.0.1", Port: 80, Reason: "state-change", Occurred: now},
+		{Kind: "DOWN", Target: "b", Address: "10.0.0.2", Port: 443, Reason: "state-change", Occurred: now},
+		{Kind: "DOWN", Target: "c", Address: "10.0.0.3", Port: 22, Reason: "state-change", Occurred: now},
+	}
+
+	svc.sendAlertBatch(context.Background(), events)
+
+	if len(notifier.defaults) != 1 {
+		t.Fatalf("expected one grouped alert, got %d", len(notifier.defaults))
+	}
+	got := notifier.defaults[0]
+	if !strings.Contains(got, "DOWN x3") {
+		t.Fatalf("expected grouped counter in message: %q", got)
+	}
+	if !strings.Contains(got, "targets:") || !strings.Contains(got, "<code>a</code>") {
+		t.Fatalf("expected grouped target list in message: %q", got)
 	}
 }
 

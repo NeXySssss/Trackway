@@ -46,6 +46,15 @@ type TargetState struct {
 	LastChecked time.Time
 }
 
+type alertEvent struct {
+	Kind     string
+	Target   string
+	Address  string
+	Port     int
+	Reason   string
+	Occurred time.Time
+}
+
 func New(cfg config.Config, logs *logstore.Store, notifier Notifier) *Service {
 	targets := buildTargets(cfg.Targets)
 	byName := make(map[string]*TargetState, len(targets))
@@ -133,6 +142,7 @@ func (s *Service) runChecks(ctx context.Context) {
 	}
 
 	sem := make(chan struct{}, workers)
+	eventsCh := make(chan alertEvent, len(s.targets))
 	var wg sync.WaitGroup
 
 	for _, target := range s.targets {
@@ -145,20 +155,28 @@ func (s *Service) runChecks(ctx context.Context) {
 			defer wg.Done()
 			defer func() { <-sem }()
 			status := checkTCP(ctx, t.Address, t.Port, s.timeout)
-			s.applyStatus(ctx, t, status)
+			if event := s.applyStatus(t, status); event != nil {
+				eventsCh <- *event
+			}
 		}(target)
 	}
 
 	wg.Wait()
+	close(eventsCh)
+
+	events := make([]alertEvent, 0, len(eventsCh))
+	for event := range eventsCh {
+		events = append(events, event)
+	}
+	s.sendAlertBatch(ctx, events)
 }
 
-func (s *Service) applyStatus(ctx context.Context, target *TargetState, status bool) {
+func (s *Service) applyStatus(target *TargetState, status bool) *alertEvent {
 	now := time.Now().UTC()
 	s.mu.Lock()
 	reason := ""
 	shouldLog := false
-	alertKind := ""
-	alertReason := ""
+	var event *alertEvent
 	target.LastChecked = now
 	if target.LastStatus == nil {
 		target.LastStatus = boolPtr(status)
@@ -166,8 +184,14 @@ func (s *Service) applyStatus(ctx context.Context, target *TargetState, status b
 		reason = "INIT"
 		shouldLog = true
 		if !status {
-			alertKind = "DOWN"
-			alertReason = "initial-check"
+			event = &alertEvent{
+				Kind:     "DOWN",
+				Target:   target.Name,
+				Address:  target.Address,
+				Port:     target.Port,
+				Reason:   "initial-check",
+				Occurred: now,
+			}
 		}
 	} else if *target.LastStatus != status {
 		prev := *target.LastStatus
@@ -176,11 +200,23 @@ func (s *Service) applyStatus(ctx context.Context, target *TargetState, status b
 		reason = "CHANGE"
 		shouldLog = true
 		if prev && !status {
-			alertKind = "DOWN"
-			alertReason = "state-change"
+			event = &alertEvent{
+				Kind:     "DOWN",
+				Target:   target.Name,
+				Address:  target.Address,
+				Port:     target.Port,
+				Reason:   "state-change",
+				Occurred: now,
+			}
 		} else if !prev && status {
-			alertKind = "RECOVERED"
-			alertReason = "state-change"
+			event = &alertEvent{
+				Kind:     "RECOVERED",
+				Target:   target.Name,
+				Address:  target.Address,
+				Port:     target.Port,
+				Reason:   "state-change",
+				Occurred: now,
+			}
 		}
 	}
 	s.mu.Unlock()
@@ -190,27 +226,78 @@ func (s *Service) applyStatus(ctx context.Context, target *TargetState, status b
 			s.logger.Warn("failed to append log row", "track", target.Name, "error", err)
 		}
 	}
-	if alertKind != "" {
-		if err := s.sendAlert(ctx, alertKind, target, alertReason); err != nil {
-			s.logger.Warn("failed to send alert", "track", target.Name, "kind", alertKind, "error", err)
+	return event
+}
+
+func (s *Service) sendAlertBatch(ctx context.Context, events []alertEvent) {
+	if s.notifier == nil || len(events) == 0 {
+		return
+	}
+
+	groups := make(map[string][]alertEvent)
+	order := make([]string, 0, len(events))
+	for _, event := range events {
+		key := event.Kind + "|" + event.Reason
+		if _, exists := groups[key]; !exists {
+			order = append(order, key)
+		}
+		groups[key] = append(groups[key], event)
+	}
+
+	sort.SliceStable(order, func(i, j int) bool {
+		leftKind, _, _ := strings.Cut(order[i], "|")
+		rightKind, _, _ := strings.Cut(order[j], "|")
+		if leftKind != rightKind {
+			return alertOrder(leftKind) < alertOrder(rightKind)
+		}
+		return order[i] < order[j]
+	})
+
+	for _, key := range order {
+		group := groups[key]
+		sort.Slice(group, func(i, j int) bool { return group[i].Target < group[j].Target })
+		message := formatAlertGroup(group)
+		if err := s.notifier.SendDefaultHTML(ctx, message); err != nil {
+			s.logger.Warn("failed to send grouped alert", "key", key, "count", len(group), "error", err)
 		}
 	}
 }
 
-func (s *Service) sendAlert(ctx context.Context, kind string, target *TargetState, reason string) error {
-	if s.notifier == nil {
-		return nil
+func formatAlertGroup(events []alertEvent) string {
+	if len(events) == 0 {
+		return ""
 	}
-	text := fmt.Sprintf(
-		"<b>%s</b>\ntrack: <code>%s</code>\nendpoint: <code>%s:%d</code>\nreason: <code>%s</code>\ntime_utc: <code>%s</code>",
-		util.HTMLEscape(kind),
-		util.HTMLEscape(target.Name),
-		util.HTMLEscape(target.Address),
-		target.Port,
-		util.HTMLEscape(reason),
-		time.Now().UTC().Format(time.RFC3339),
-	)
-	return s.notifier.SendDefaultHTML(ctx, text)
+	first := events[0]
+	var sb strings.Builder
+	if len(events) == 1 {
+		fmt.Fprintf(&sb, "<b>%s</b>\n", util.HTMLEscape(first.Kind))
+	} else {
+		fmt.Fprintf(&sb, "<b>%s x%d</b>\n", util.HTMLEscape(first.Kind), len(events))
+	}
+	fmt.Fprintf(&sb, "reason: <code>%s</code>\n", util.HTMLEscape(first.Reason))
+	fmt.Fprintf(&sb, "time_utc: <code>%s</code>\n", first.Occurred.Format(time.RFC3339))
+	sb.WriteString("targets:\n")
+	for _, event := range events {
+		fmt.Fprintf(
+			&sb,
+			"- <code>%s</code> (<code>%s:%d</code>)\n",
+			util.HTMLEscape(event.Target),
+			util.HTMLEscape(event.Address),
+			event.Port,
+		)
+	}
+	return strings.TrimSuffix(sb.String(), "\n")
+}
+
+func alertOrder(kind string) int {
+	switch kind {
+	case "DOWN":
+		return 0
+	case "RECOVERED":
+		return 1
+	default:
+		return 2
+	}
 }
 
 func (s *Service) listText() string {
