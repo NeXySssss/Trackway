@@ -12,6 +12,14 @@ Uses latest deps in this repo:
 - Commands: `/start`, `/list`, `/status`, `/logs <track>`.
 - Per-track logs, filtered by last 7 days in `/logs`.
 
+## Project layout
+- `cmd/trackway/main.go` - entrypoint and wiring.
+- `internal/config` - config parsing and validation.
+- `internal/telegram` - Telegram client adapter.
+- `internal/tracker` - monitoring + bot command handlers.
+- `internal/logstore` - append/read logs by track.
+- `internal/util` - shared text/time helpers.
+
 ## Config
 `config.yaml` format:
 
@@ -32,7 +40,7 @@ targets:
 
 ## Local run
 ```powershell
-go build -o port-tracker.exe
+go build -o port-tracker.exe ./cmd/trackway
 .\port-tracker.exe
 ```
 
