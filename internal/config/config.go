@@ -16,6 +16,7 @@ type Config struct {
 	Monitoring struct {
 		IntervalSeconds       int `yaml:"interval_seconds"`
 		ConnectTimeoutSeconds int `yaml:"connect_timeout_seconds"`
+		MaxParallelChecks     int `yaml:"max_parallel_checks"`
 	} `yaml:"monitoring"`
 	Storage struct {
 		LogDir string `yaml:"log_dir"`

@@ -3,10 +3,15 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
+	"time"
+
+	"github.com/go-telegram/bot/models"
 
 	"trackway/internal/config"
 	"trackway/internal/logstore"
@@ -15,6 +20,8 @@ import (
 )
 
 func main() {
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
+
 	cfgPath := envOrDefault("CONFIG_PATH", "config.yaml")
 
 	cfg, err := config.Load(cfgPath)
@@ -34,22 +41,47 @@ func main() {
 		os.Exit(1)
 	}
 
-	svc := tracker.New(cfg, store, nil)
-	client, err := telegram.New(cfg.Bot.Token, cfg.Bot.ChatID, svc.HandleUpdate)
+	updates := make(chan *models.Update, 128)
+	client, err := telegram.New(cfg.Bot.Token, cfg.Bot.ChatID, func(ctx context.Context, update *models.Update) {
+		select {
+		case updates <- update:
+		case <-ctx.Done():
+		default:
+			slog.Warn("dropping update due to full queue")
+		}
+	})
 	if err != nil {
 		fmt.Println("bot init error:", err)
 		os.Exit(1)
 	}
-	svc.SetNotifier(client)
+	svc := tracker.New(cfg, store, client)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	go svc.RunMonitor(ctx)
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		svc.RunMonitor(ctx)
+	}()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case update := <-updates:
+				svc.HandleUpdate(ctx, update)
+			}
+		}
+	}()
 
-	_ = client.SendDefaultHTML(ctx, "<b>INFO</b>\nport tracker started (Go)")
+	sendStatus(client, "<b>INFO</b>\nport tracker started (Go)")
 	client.Start(ctx)
-	_ = client.SendDefaultHTML(context.Background(), "<b>INFO</b>\nport tracker stopped")
+	wg.Wait()
+	sendStatus(client, "<b>INFO</b>\nport tracker stopped")
 }
 
 func envOrDefault(name string, fallback string) string {
@@ -58,4 +90,12 @@ func envOrDefault(name string, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func sendStatus(client *telegram.Client, message string) {
+	sendCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if err := client.SendDefaultHTML(sendCtx, message); err != nil {
+		fmt.Println("status message error:", err)
+	}
 }

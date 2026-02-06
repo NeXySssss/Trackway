@@ -30,6 +30,7 @@ bot:
 monitoring:
   interval_seconds: 5
   connect_timeout_seconds: 2
+  max_parallel_checks: 16
 storage:
   log_dir: "logs"
 targets:
@@ -59,3 +60,12 @@ Compose config in `docker-compose.yml`:
 ```powershell
 docker compose down
 ```
+
+## Quality checks
+```powershell
+go test ./...
+go vet ./...
+go build ./...
+```
+
+`max_parallel_checks` controls how many targets are probed concurrently in each cycle.

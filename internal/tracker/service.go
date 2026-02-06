@@ -3,6 +3,7 @@ package tracker
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net"
 	"sort"
 	"strconv"
@@ -25,19 +26,15 @@ type Notifier interface {
 type Service struct {
 	notifier Notifier
 	logs     *logstore.Store
+	logger   *slog.Logger
 
-	interval time.Duration
-	timeout  time.Duration
+	interval     time.Duration
+	timeout      time.Duration
+	checkWorkers int
 
 	mu           sync.RWMutex
 	targets      []*TargetState
 	targetByName map[string]*TargetState
-}
-
-func (s *Service) SetNotifier(notifier Notifier) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.notifier = notifier
 }
 
 type TargetState struct {
@@ -58,14 +55,17 @@ func New(cfg config.Config, logs *logstore.Store, notifier Notifier) *Service {
 	return &Service{
 		notifier:     notifier,
 		logs:         logs,
+		logger:       slog.Default(),
 		interval:     defaultSeconds(cfg.Monitoring.IntervalSeconds, 5),
 		timeout:      defaultSeconds(cfg.Monitoring.ConnectTimeoutSeconds, 2),
+		checkWorkers: defaultWorkers(cfg.Monitoring.MaxParallelChecks, len(targets)),
 		targets:      targets,
 		targetByName: byName,
 	}
 }
 
 func (s *Service) RunMonitor(ctx context.Context) {
+	s.runChecks(ctx)
 	ticker := time.NewTicker(s.interval)
 	defer ticker.Stop()
 	for {
@@ -104,7 +104,9 @@ func (s *Service) HandleUpdate(ctx context.Context, update *models.Update) {
 				return
 			}
 			for _, message := range s.logsMessages(arg) {
-				_ = s.notifier.SendHTML(ctx, msg.Chat.ID, message)
+				if err := s.notifier.SendHTML(ctx, msg.Chat.ID, message); err != nil {
+					s.logger.Warn("failed to send logs message", "track", arg, "error", err)
+				}
 			}
 			return
 		}
@@ -115,14 +117,39 @@ func (s *Service) HandleUpdate(ctx context.Context, update *models.Update) {
 	if s.notifier == nil {
 		return
 	}
-	_ = s.notifier.SendHTML(ctx, msg.Chat.ID, response)
+	if err := s.notifier.SendHTML(ctx, msg.Chat.ID, response); err != nil {
+		s.logger.Warn("failed to send command response", "command", command, "chat_id", msg.Chat.ID, "error", err)
+	}
 }
 
 func (s *Service) runChecks(ctx context.Context) {
-	for _, target := range s.targets {
-		status := checkTCP(target.Address, target.Port, s.timeout)
-		s.applyStatus(ctx, target, status)
+	if len(s.targets) == 0 {
+		return
 	}
+
+	workers := s.checkWorkers
+	if workers > len(s.targets) {
+		workers = len(s.targets)
+	}
+
+	sem := make(chan struct{}, workers)
+	var wg sync.WaitGroup
+
+	for _, target := range s.targets {
+		if ctx.Err() != nil {
+			break
+		}
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(t *TargetState) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			status := checkTCP(ctx, t.Address, t.Port, s.timeout)
+			s.applyStatus(ctx, t, status)
+		}(target)
+	}
+
+	wg.Wait()
 }
 
 func (s *Service) applyStatus(ctx context.Context, target *TargetState, status bool) {
@@ -159,10 +186,14 @@ func (s *Service) applyStatus(ctx context.Context, target *TargetState, status b
 	s.mu.Unlock()
 
 	if shouldLog {
-		_ = s.logs.Append(target.Name, target.Address, target.Port, status, reason)
+		if err := s.logs.Append(target.Name, target.Address, target.Port, status, reason); err != nil {
+			s.logger.Warn("failed to append log row", "track", target.Name, "error", err)
+		}
 	}
 	if alertKind != "" {
-		_ = s.sendAlert(ctx, alertKind, target, alertReason)
+		if err := s.sendAlert(ctx, alertKind, target, alertReason); err != nil {
+			s.logger.Warn("failed to send alert", "track", target.Name, "kind", alertKind, "error", err)
+		}
 	}
 }
 
@@ -307,22 +338,15 @@ func buildTargets(items []config.Target) []*TargetState {
 	return out
 }
 
-func checkTCP(address string, port int, timeout time.Duration) bool {
+func checkTCP(ctx context.Context, address string, port int, timeout time.Duration) bool {
 	endpoint := net.JoinHostPort(address, strconv.Itoa(port))
-	conn, err := net.DialTimeout("tcp", endpoint, timeout)
+	dialer := net.Dialer{Timeout: timeout}
+	conn, err := dialer.DialContext(ctx, "tcp", endpoint)
 	if err != nil {
 		return false
 	}
 	_ = conn.Close()
 	return true
-}
-
-func formatRows(rows []logstore.Row) string {
-	var sb strings.Builder
-	for _, row := range rows {
-		fmt.Fprintf(&sb, "%s  %-4s  %-21s  %s\n", row.Timestamp, row.Status, row.Endpoint, row.Reason)
-	}
-	return strings.TrimSuffix(sb.String(), "\n")
 }
 
 func renderLogChunks(header string, rows []logstore.Row) []string {
@@ -369,6 +393,16 @@ func defaultSeconds(value int, fallback int) time.Duration {
 		value = fallback
 	}
 	return time.Duration(value) * time.Second
+}
+
+func defaultWorkers(value int, targetCount int) int {
+	if value <= 0 {
+		value = targetCount
+	}
+	if value < 1 {
+		value = 1
+	}
+	return value
 }
 
 func boolPtr(value bool) *bool {

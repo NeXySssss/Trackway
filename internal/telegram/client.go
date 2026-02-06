@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"time"
 
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -10,6 +11,7 @@ import (
 )
 
 const maxMessageLength = 4000
+const sendTimeout = 10 * time.Second
 
 type UpdateHandler func(ctx context.Context, update *models.Update)
 
@@ -41,12 +43,14 @@ func (c *Client) SendDefaultHTML(ctx context.Context, text string) error {
 }
 
 func (c *Client) SendHTML(ctx context.Context, chatID int64, text string) error {
-	for _, chunk := range util.SplitByLimit(text, maxMessageLength) {
-		_, err := c.bot.SendMessage(ctx, &tgbot.SendMessageParams{
+	for _, chunk := range util.SplitByLineLimit(text, maxMessageLength) {
+		chunkCtx, cancel := context.WithTimeout(ctx, sendTimeout)
+		_, err := c.bot.SendMessage(chunkCtx, &tgbot.SendMessageParams{
 			ChatID:    chatID,
 			Text:      chunk,
 			ParseMode: models.ParseModeHTML,
 		})
+		cancel()
 		if err != nil {
 			return err
 		}

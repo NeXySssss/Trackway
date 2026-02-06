@@ -5,6 +5,7 @@ bot:
 monitoring:
   interval_seconds: 5
   connect_timeout_seconds: 2
+  max_parallel_checks: 16
 
 storage:
   log_dir: "logs"
