@@ -1,0 +1,15 @@
+services:
+  trackway:
+    build: .
+    image: trackway:latest
+    container_name: trackway
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    environment:
+      CONFIG_PATH: /app/config.yaml
+      LOG_DIR: /data/logs
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - ./data:/data
