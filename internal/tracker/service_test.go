@@ -15,12 +15,27 @@ type fakeNotifier struct {
 	mu       sync.Mutex
 	defaults []string
 	replies  []string
+	edits    []string
 }
 
 func (f *fakeNotifier) SendDefaultHTML(_ context.Context, text string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.defaults = append(f.defaults, text)
+	return nil
+}
+
+func (f *fakeNotifier) SendDefaultHTMLWithID(_ context.Context, text string) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.defaults = append(f.defaults, text)
+	return 100 + len(f.defaults), nil
+}
+
+func (f *fakeNotifier) EditDefaultHTML(_ context.Context, _ int, text string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.edits = append(f.edits, text)
 	return nil
 }
 
@@ -112,6 +127,56 @@ func TestSendAlertBatchCombinesSameKind(t *testing.T) {
 	}
 	if !strings.Contains(got, "targets:") || !strings.Contains(got, "<code>a</code>") {
 		t.Fatalf("expected grouped target list in message: %q", got)
+	}
+}
+
+func TestFastRecoveryEditsDownMessage(t *testing.T) {
+	t.Parallel()
+
+	store, err := logstore.New(t.TempDir())
+	if err != nil {
+		t.Fatalf("logstore init error: %v", err)
+	}
+	notifier := &fakeNotifier{}
+	svc := New(testConfig(), store, notifier)
+
+	downTime := time.Now().UTC()
+	recoveredTime := downTime.Add(5 * time.Second)
+	events := []alertEvent{
+		{
+			Kind:     "DOWN",
+			Target:   "test-track",
+			Address:  "127.0.0.1",
+			Port:     1,
+			Reason:   "state-change",
+			Occurred: downTime,
+		},
+	}
+	svc.sendAlertBatch(context.Background(), events)
+	if len(notifier.defaults) != 1 {
+		t.Fatalf("expected one DOWN message, got %d", len(notifier.defaults))
+	}
+
+	events = []alertEvent{
+		{
+			Kind:     "RECOVERED",
+			Target:   "test-track",
+			Address:  "127.0.0.1",
+			Port:     1,
+			Reason:   "state-change",
+			Occurred: recoveredTime,
+		},
+	}
+	svc.sendAlertBatch(context.Background(), events)
+
+	if len(notifier.edits) != 1 {
+		t.Fatalf("expected edit message, got %d", len(notifier.edits))
+	}
+	if strings.Contains(notifier.edits[0], "downtime: <code>5s</code>") == false {
+		t.Fatalf("expected downtime in edit message, got: %q", notifier.edits[0])
+	}
+	if len(notifier.defaults) != 1 {
+		t.Fatalf("expected no extra RECOVERED message, defaults=%d", len(notifier.defaults))
 	}
 }
 

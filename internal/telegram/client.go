@@ -42,6 +42,43 @@ func (c *Client) SendDefaultHTML(ctx context.Context, text string) error {
 	return c.SendHTML(ctx, c.chatID, text)
 }
 
+func (c *Client) SendDefaultHTMLWithID(ctx context.Context, text string) (int, error) {
+	chunks := util.SplitByLineLimit(text, maxMessageLength)
+	if len(chunks) != 1 {
+		if err := c.SendDefaultHTML(ctx, text); err != nil {
+			return 0, err
+		}
+		return 0, nil
+	}
+	chunkCtx, cancel := context.WithTimeout(ctx, sendTimeout)
+	defer cancel()
+	msg, err := c.bot.SendMessage(chunkCtx, &tgbot.SendMessageParams{
+		ChatID:    c.chatID,
+		Text:      chunks[0],
+		ParseMode: models.ParseModeHTML,
+	})
+	if err != nil {
+		return 0, err
+	}
+	return msg.ID, nil
+}
+
+func (c *Client) EditDefaultHTML(ctx context.Context, messageID int, text string) error {
+	chunks := util.SplitByLineLimit(text, maxMessageLength)
+	if len(chunks) != 1 {
+		return c.SendDefaultHTML(ctx, text)
+	}
+	chunkCtx, cancel := context.WithTimeout(ctx, sendTimeout)
+	defer cancel()
+	_, err := c.bot.EditMessageText(chunkCtx, &tgbot.EditMessageTextParams{
+		ChatID:    c.chatID,
+		MessageID: messageID,
+		Text:      chunks[0],
+		ParseMode: models.ParseModeHTML,
+	})
+	return err
+}
+
 func (c *Client) SendHTML(ctx context.Context, chatID int64, text string) error {
 	for _, chunk := range util.SplitByLineLimit(text, maxMessageLength) {
 		chunkCtx, cancel := context.WithTimeout(ctx, sendTimeout)

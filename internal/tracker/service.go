@@ -20,6 +20,8 @@ import (
 
 type Notifier interface {
 	SendDefaultHTML(ctx context.Context, text string) error
+	SendDefaultHTMLWithID(ctx context.Context, text string) (int, error)
+	EditDefaultHTML(ctx context.Context, messageID int, text string) error
 	SendHTML(ctx context.Context, chatID int64, text string) error
 }
 
@@ -35,6 +37,7 @@ type Service struct {
 	mu           sync.RWMutex
 	targets      []*TargetState
 	targetByName map[string]*TargetState
+	pendingDown  map[string]pendingDownAlert
 }
 
 type TargetState struct {
@@ -55,6 +58,14 @@ type alertEvent struct {
 	Occurred time.Time
 }
 
+type pendingDownAlert struct {
+	MessageID int
+	DownAt    time.Time
+	Reason    string
+	Address   string
+	Port      int
+}
+
 func New(cfg config.Config, logs *logstore.Store, notifier Notifier) *Service {
 	targets := buildTargets(cfg.Targets)
 	byName := make(map[string]*TargetState, len(targets))
@@ -70,6 +81,7 @@ func New(cfg config.Config, logs *logstore.Store, notifier Notifier) *Service {
 		checkWorkers: defaultWorkers(cfg.Monitoring.MaxParallelChecks, len(targets)),
 		targets:      targets,
 		targetByName: byName,
+		pendingDown:  make(map[string]pendingDownAlert, len(targets)),
 	}
 }
 
@@ -234,6 +246,11 @@ func (s *Service) sendAlertBatch(ctx context.Context, events []alertEvent) {
 		return
 	}
 
+	events = s.applyFastRecoveryEdits(ctx, events, 30*time.Second)
+	if len(events) == 0 {
+		return
+	}
+
 	groups := make(map[string][]alertEvent)
 	order := make([]string, 0, len(events))
 	for _, event := range events {
@@ -257,10 +274,97 @@ func (s *Service) sendAlertBatch(ctx context.Context, events []alertEvent) {
 		group := groups[key]
 		sort.Slice(group, func(i, j int) bool { return group[i].Target < group[j].Target })
 		message := formatAlertGroup(group)
+		kind, reason, _ := strings.Cut(key, "|")
+
+		if kind == "DOWN" && reason == "state-change" && len(group) == 1 {
+			messageID, err := s.notifier.SendDefaultHTMLWithID(ctx, message)
+			if err != nil {
+				s.logger.Warn("failed to send grouped alert", "key", key, "count", len(group), "error", err)
+				continue
+			}
+			if messageID > 0 {
+				ev := group[0]
+				s.pendingDown[ev.Target] = pendingDownAlert{
+					MessageID: messageID,
+					DownAt:    ev.Occurred,
+					Reason:    ev.Reason,
+					Address:   ev.Address,
+					Port:      ev.Port,
+				}
+			}
+			continue
+		}
+
 		if err := s.notifier.SendDefaultHTML(ctx, message); err != nil {
 			s.logger.Warn("failed to send grouped alert", "key", key, "count", len(group), "error", err)
 		}
 	}
+}
+
+func (s *Service) applyFastRecoveryEdits(ctx context.Context, events []alertEvent, window time.Duration) []alertEvent {
+	remaining := make([]alertEvent, 0, len(events))
+	for _, ev := range events {
+		if ev.Kind != "RECOVERED" || ev.Reason != "state-change" {
+			remaining = append(remaining, ev)
+			continue
+		}
+
+		pending, ok := s.pendingDown[ev.Target]
+		if !ok {
+			remaining = append(remaining, ev)
+			continue
+		}
+		delete(s.pendingDown, ev.Target)
+
+		if ev.Occurred.Sub(pending.DownAt) > window {
+			remaining = append(remaining, ev)
+			continue
+		}
+
+		editText := formatRecoveredEdit(ev, pending)
+		if err := s.notifier.EditDefaultHTML(ctx, pending.MessageID, editText); err != nil {
+			s.logger.Warn("failed to edit down alert message", "track", ev.Target, "error", err)
+			remaining = append(remaining, ev)
+		}
+	}
+	return remaining
+}
+
+func formatRecoveredEdit(recovered alertEvent, pending pendingDownAlert) string {
+	downtime := recovered.Occurred.Sub(pending.DownAt)
+	if downtime < 0 {
+		downtime = 0
+	}
+	var sb strings.Builder
+	sb.WriteString("<b>DOWN -> RECOVERED</b>\n")
+	fmt.Fprintf(&sb, "reason: <code>%s</code>\n", util.HTMLEscape(recovered.Reason))
+	fmt.Fprintf(&sb, "down_at_utc: <code>%s</code>\n", pending.DownAt.Format(time.RFC3339))
+	fmt.Fprintf(&sb, "recovered_at_utc: <code>%s</code>\n", recovered.Occurred.Format(time.RFC3339))
+	fmt.Fprintf(&sb, "downtime: <code>%s</code>\n", formatDurationShort(downtime))
+	sb.WriteString("target:\n")
+	fmt.Fprintf(
+		&sb,
+		"- <code>%s</code> (<code>%s:%d</code>)",
+		util.HTMLEscape(recovered.Target),
+		util.HTMLEscape(recovered.Address),
+		recovered.Port,
+	)
+	return sb.String()
+}
+
+func formatDurationShort(d time.Duration) string {
+	seconds := int(d.Seconds())
+	if seconds < 60 {
+		return fmt.Sprintf("%ds", seconds)
+	}
+	minutes := seconds / 60
+	seconds = seconds % 60
+	if minutes < 60 {
+		return fmt.Sprintf("%dm%ds", minutes, seconds)
+	}
+	hours := minutes / 60
+	minutes = minutes % 60
+	return fmt.Sprintf("%dh%dm%ds", hours, minutes, seconds)
 }
 
 func formatAlertGroup(events []alertEvent) string {

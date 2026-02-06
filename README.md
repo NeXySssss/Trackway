@@ -9,6 +9,7 @@ Uses latest deps in this repo:
 ## Features
 - Monitor `address:port` targets on interval.
 - Telegram alerts on `DOWN` and `RECOVERED` (batched per check cycle).
+- If a `state-change` DOWN recovers within 30s, the original DOWN message is edited to `DOWN -> RECOVERED`.
 - Commands: `/start`, `/list`, `/status`, `/logs <track>`.
 - Per-track logs, filtered by last 7 days in `/logs`.
 
