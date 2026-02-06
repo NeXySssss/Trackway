@@ -38,6 +38,7 @@ type Service struct {
 	targets      []*TargetState
 	targetByName map[string]*TargetState
 	pendingDown  map[string]pendingDownAlert
+	pendingGroup map[string][]pendingDownGroup
 }
 
 type TargetState struct {
@@ -66,6 +67,13 @@ type pendingDownAlert struct {
 	Port      int
 }
 
+type pendingDownGroup struct {
+	MessageID int
+	Reason    string
+	DownAt    time.Time
+	Targets   map[string]alertEvent
+}
+
 func New(cfg config.Config, logs *logstore.Store, notifier Notifier) *Service {
 	targets := buildTargets(cfg.Targets)
 	byName := make(map[string]*TargetState, len(targets))
@@ -82,6 +90,7 @@ func New(cfg config.Config, logs *logstore.Store, notifier Notifier) *Service {
 		targets:      targets,
 		targetByName: byName,
 		pendingDown:  make(map[string]pendingDownAlert, len(targets)),
+		pendingGroup: make(map[string][]pendingDownGroup),
 	}
 }
 
@@ -276,33 +285,60 @@ func (s *Service) sendAlertBatch(ctx context.Context, events []alertEvent) {
 		message := formatAlertGroup(group)
 		kind, reason, _ := strings.Cut(key, "|")
 
-		if kind == "DOWN" && reason == "state-change" && len(group) == 1 {
-			messageID, err := s.notifier.SendDefaultHTMLWithID(ctx, message)
-			if err != nil {
-				s.logger.Warn("failed to send grouped alert", "key", key, "count", len(group), "error", err)
-				continue
-			}
-			if messageID > 0 {
-				ev := group[0]
-				s.pendingDown[ev.Target] = pendingDownAlert{
-					MessageID: messageID,
-					DownAt:    ev.Occurred,
-					Reason:    ev.Reason,
-					Address:   ev.Address,
-					Port:      ev.Port,
-				}
-			}
-			continue
-		}
+		s.handleGroupSend(ctx, kind, reason, group, message, key)
+	}
+}
 
-		if err := s.notifier.SendDefaultHTML(ctx, message); err != nil {
+func (s *Service) handleGroupSend(ctx context.Context, kind, reason string, group []alertEvent, message, key string) {
+	if kind == "DOWN" && reason == "state-change" && len(group) == 1 {
+		messageID, err := s.notifier.SendDefaultHTMLWithID(ctx, message)
+		if err != nil {
 			s.logger.Warn("failed to send grouped alert", "key", key, "count", len(group), "error", err)
+			return
 		}
+		if messageID > 0 {
+			ev := group[0]
+			s.pendingDown[ev.Target] = pendingDownAlert{
+				MessageID: messageID,
+				DownAt:    ev.Occurred,
+				Reason:    ev.Reason,
+				Address:   ev.Address,
+				Port:      ev.Port,
+			}
+		}
+		return
+	}
+
+	if kind == "DOWN" && reason == "state-change" && len(group) > 1 {
+		messageID, err := s.notifier.SendDefaultHTMLWithID(ctx, message)
+		if err != nil {
+			s.logger.Warn("failed to send grouped alert", "key", key, "count", len(group), "error", err)
+			return
+		}
+		if messageID > 0 {
+			pending := pendingDownGroup{
+				MessageID: messageID,
+				Reason:    reason,
+				DownAt:    group[0].Occurred,
+				Targets:   make(map[string]alertEvent, len(group)),
+			}
+			for _, ev := range group {
+				pending.Targets[ev.Target] = ev
+			}
+			s.pendingGroup[reason] = append(s.pendingGroup[reason], pending)
+		}
+		return
+	}
+
+	if err := s.notifier.SendDefaultHTML(ctx, message); err != nil {
+		s.logger.Warn("failed to send grouped alert", "key", key, "count", len(group), "error", err)
 	}
 }
 
 func (s *Service) applyFastRecoveryEdits(ctx context.Context, events []alertEvent, window time.Duration) []alertEvent {
 	remaining := make([]alertEvent, 0, len(events))
+	groupedRecoveries := make(map[string][]alertEvent)
+
 	for _, ev := range events {
 		if ev.Kind != "RECOVERED" || ev.Reason != "state-change" {
 			remaining = append(remaining, ev)
@@ -311,20 +347,60 @@ func (s *Service) applyFastRecoveryEdits(ctx context.Context, events []alertEven
 
 		pending, ok := s.pendingDown[ev.Target]
 		if !ok {
-			remaining = append(remaining, ev)
+			groupedRecoveries[ev.Reason] = append(groupedRecoveries[ev.Reason], ev)
 			continue
 		}
 		delete(s.pendingDown, ev.Target)
 
 		if ev.Occurred.Sub(pending.DownAt) > window {
-			remaining = append(remaining, ev)
+			groupedRecoveries[ev.Reason] = append(groupedRecoveries[ev.Reason], ev)
 			continue
 		}
 
 		editText := formatRecoveredEdit(ev, pending)
 		if err := s.notifier.EditDefaultHTML(ctx, pending.MessageID, editText); err != nil {
 			s.logger.Warn("failed to edit down alert message", "track", ev.Target, "error", err)
-			remaining = append(remaining, ev)
+			groupedRecoveries[ev.Reason] = append(groupedRecoveries[ev.Reason], ev)
+		}
+	}
+
+	// handle grouped DOWN -> RECOVERED edits
+	for reason, recovs := range groupedRecoveries {
+		pendingList := s.pendingGroup[reason]
+		if len(pendingList) == 0 {
+			remaining = append(remaining, recovs...)
+			continue
+		}
+		consumedIdx := -1
+		for idx, pending := range pendingList {
+			if len(pending.Targets) != len(recovs) {
+				continue
+			}
+			match := true
+			for _, ev := range recovs {
+				if _, ok := pending.Targets[ev.Target]; !ok {
+					match = false
+					break
+				}
+				if ev.Occurred.Sub(pending.DownAt) > window {
+					match = false
+					break
+				}
+			}
+			if match {
+				consumedIdx = idx
+				if err := s.notifier.EditDefaultHTML(ctx, pending.MessageID, formatGroupedRecoveryEdit(pending, recovs)); err != nil {
+					s.logger.Warn("failed to edit grouped alert", "reason", reason, "error", err)
+					remaining = append(remaining, recovs...)
+				}
+				break
+			}
+		}
+		if consumedIdx >= 0 {
+			pendingList = append(pendingList[:consumedIdx], pendingList[consumedIdx+1:]...)
+			s.pendingGroup[reason] = pendingList
+		} else {
+			remaining = append(remaining, recovs...)
 		}
 	}
 	return remaining
@@ -365,6 +441,41 @@ func formatDurationShort(d time.Duration) string {
 	hours := minutes / 60
 	minutes = minutes % 60
 	return fmt.Sprintf("%dh%dm%ds", hours, minutes, seconds)
+}
+
+func formatGroupedRecoveryEdit(pending pendingDownGroup, recovs []alertEvent) string {
+	if len(recovs) == 0 {
+		return ""
+	}
+	// use latest recover time for header
+	latest := recovs[0].Occurred
+	for _, ev := range recovs[1:] {
+		if ev.Occurred.After(latest) {
+			latest = ev.Occurred
+		}
+	}
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "<b>DOWN -> RECOVERED x%d</b>\n", len(recovs))
+	fmt.Fprintf(&sb, "reason: <code>%s</code>\n", util.HTMLEscape(recovs[0].Reason))
+	fmt.Fprintf(&sb, "time_utc: <code>%s</code>\n", latest.Format(time.RFC3339))
+	sb.WriteString("targets:\n")
+	sort.Slice(recovs, func(i, j int) bool { return recovs[i].Target < recovs[j].Target })
+	for _, ev := range recovs {
+		downtime := ev.Occurred.Sub(pending.DownAt)
+		if downEvent, ok := pending.Targets[ev.Target]; ok {
+			downtime = ev.Occurred.Sub(downEvent.Occurred)
+		}
+		fmt.Fprintf(
+			&sb,
+			"- <code>%s</code> (<code>%s:%d</code>)\nrecovered_at_utc: <code>%s</code>\ndowntime: <code>%s</code>\n",
+			util.HTMLEscape(ev.Target),
+			util.HTMLEscape(ev.Address),
+			ev.Port,
+			ev.Occurred.Format(time.RFC3339),
+			formatDurationShort(downtime),
+		)
+	}
+	return strings.TrimSuffix(sb.String(), "\n")
 }
 
 func formatAlertGroup(events []alertEvent) string {

@@ -180,6 +180,50 @@ func TestFastRecoveryEditsDownMessage(t *testing.T) {
 	}
 }
 
+func TestFastRecoveryGroupEditsDownMessage(t *testing.T) {
+	t.Parallel()
+
+	store, err := logstore.New(t.TempDir())
+	if err != nil {
+		t.Fatalf("logstore init error: %v", err)
+	}
+	notifier := &fakeNotifier{}
+	svc := New(testConfig(), store, notifier)
+
+	downTime := time.Now().UTC()
+	recoveredTime := downTime.Add(4 * time.Second)
+	group := []alertEvent{
+		{Kind: "DOWN", Target: "a", Address: "10.0.0.1", Port: 80, Reason: "state-change", Occurred: downTime},
+		{Kind: "DOWN", Target: "b", Address: "10.0.0.2", Port: 443, Reason: "state-change", Occurred: downTime},
+		{Kind: "DOWN", Target: "c", Address: "10.0.0.3", Port: 22, Reason: "state-change", Occurred: downTime},
+	}
+	svc.sendAlertBatch(context.Background(), group)
+	if len(notifier.defaults) != 1 {
+		t.Fatalf("expected one grouped DOWN, got %d", len(notifier.defaults))
+	}
+
+	recovered := []alertEvent{
+		{Kind: "RECOVERED", Target: "a", Address: "10.0.0.1", Port: 80, Reason: "state-change", Occurred: recoveredTime},
+		{Kind: "RECOVERED", Target: "b", Address: "10.0.0.2", Port: 443, Reason: "state-change", Occurred: recoveredTime},
+		{Kind: "RECOVERED", Target: "c", Address: "10.0.0.3", Port: 22, Reason: "state-change", Occurred: recoveredTime},
+	}
+	svc.sendAlertBatch(context.Background(), recovered)
+
+	if len(notifier.edits) != 1 {
+		t.Fatalf("expected one grouped edit, got %d", len(notifier.edits))
+	}
+	got := notifier.edits[0]
+	if !strings.Contains(got, "DOWN -> RECOVERED x3") {
+		t.Fatalf("expected grouped edit header, got %q", got)
+	}
+	if strings.Contains(got, "downtime: <code>4s</code>") == false {
+		t.Fatalf("expected downtime 4s in edit, got %q", got)
+	}
+	if len(notifier.defaults) != 1 {
+		t.Fatalf("expected no extra RECOVERED messages, defaults=%d", len(notifier.defaults))
+	}
+}
+
 func TestLogsMessagesChunking(t *testing.T) {
 	t.Parallel()
 
