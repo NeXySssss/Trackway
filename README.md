@@ -43,8 +43,9 @@ docker compose up -d --build
 
 Compose config in `docker-compose.yml`:
 - read-only root filesystem (`read_only: true`)
-- writable logs only via `./data:/data`
+- writable logs only via named volume `trackway-data:/data/logs`
 - config mounted read-only `./config.yaml:/app/config.yaml:ro`
+- runtime user is `root` to avoid host/volume UID permission issues
 
 ## Stop
 ```powershell
