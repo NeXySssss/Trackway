@@ -112,6 +112,13 @@ Quick 502 checklist:
 2. `dashboard.public_url` equals your external URL exactly.
 3. Caddy upstream points to the same local port (`127.0.0.1:8083`).
 
+## CI/CD and Auto Deploy
+- CI/CD workflow: `.github/workflows/ci-cd.yml`
+- Nightly ClickHouse backup: `.github/workflows/clickhouse-backup.yml`
+- Full Debian 13 setup guide: `docs/DEPLOYMENT.md`
+- SSH secrets for deploy: `DEPLOY_SSH_HOST`, `DEPLOY_SSH_USER`, `DEPLOY_SSH_PRIVATE_KEY` (and optional `DEPLOY_SSH_PORT`, `DEPLOY_SSH_KNOWN_HOSTS`)
+- GHCR secrets for image deploy: `GHCR_USERNAME`, `GHCR_TOKEN`
+
 ## Frontend build
 Astro assets are built once and embedded into the Go binary.
 

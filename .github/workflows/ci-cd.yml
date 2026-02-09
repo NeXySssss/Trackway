@@ -1,0 +1,240 @@
+name: CI-CD
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: trackway-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  test:
+    name: Test and Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run tests
+        run: go test ./...
+
+      - name: Build
+        run: go build ./...
+
+  image:
+    name: Build and Push Image
+    runs-on:
+      - self-hosted
+      - trackway
+    needs:
+      - test
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    outputs:
+      image_latest: ${{ steps.meta.outputs.image_latest }}
+      image_sha: ${{ steps.meta.outputs.image_sha }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Derive image names
+        id: meta
+        run: |
+          set -euo pipefail
+          owner_lower="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
+          image_base="ghcr.io/${owner_lower}/trackway"
+          image_sha="${image_base}:${GITHUB_SHA}"
+          image_latest="${image_base}:latest"
+          echo "image_sha=${image_sha}" >> "${GITHUB_OUTPUT}"
+          echo "image_latest=${image_latest}" >> "${GITHUB_OUTPUT}"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ secrets.GHCR_USERNAME }}
+          password: ${{ secrets.GHCR_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.image_sha }}
+            ${{ steps.meta.outputs.image_latest }}
+
+  deploy:
+    name: Deploy over SSH
+    runs-on:
+      - self-hosted
+      - trackway
+    needs:
+      - image
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    env:
+      DEPLOY_DIR: /opt/trackway
+      BACKUP_DIR: /opt/trackway/backups
+      TRACKWAY_CONFIG_PATH: /opt/trackway/config.yaml
+      COMPOSE_PROJECT_NAME: trackway
+      BACKUP_KEEP: "30"
+      HEALTHCHECK_URL: http://127.0.0.1:8083/healthz
+      TRACKWAY_IMAGE: ${{ needs.image.outputs.image_latest }}
+
+      DEPLOY_SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
+      DEPLOY_SSH_USER: ${{ secrets.DEPLOY_SSH_USER }}
+      DEPLOY_SSH_PORT: ${{ secrets.DEPLOY_SSH_PORT }}
+      DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+      DEPLOY_SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+
+      GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+      TRACKWAY_CONFIG_YAML: ${{ secrets.TRACKWAY_CONFIG_YAML }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate required secrets
+        run: |
+          set -euo pipefail
+          if [ -z "${DEPLOY_SSH_HOST}" ]; then
+            echo "Secret DEPLOY_SSH_HOST is required." >&2
+            exit 1
+          fi
+          if [ -z "${DEPLOY_SSH_USER}" ]; then
+            echo "Secret DEPLOY_SSH_USER is required." >&2
+            exit 1
+          fi
+          if [ -z "${DEPLOY_SSH_PRIVATE_KEY}" ]; then
+            echo "Secret DEPLOY_SSH_PRIVATE_KEY is required." >&2
+            exit 1
+          fi
+          if [ -z "${GHCR_USERNAME}" ]; then
+            echo "Secret GHCR_USERNAME is required." >&2
+            exit 1
+          fi
+          if [ -z "${GHCR_TOKEN}" ]; then
+            echo "Secret GHCR_TOKEN is required." >&2
+            exit 1
+          fi
+
+      - name: Setup SSH key
+        run: |
+          set -euo pipefail
+          mkdir -p "${HOME}/.ssh"
+          chmod 700 "${HOME}/.ssh"
+          printf '%s\n' "${DEPLOY_SSH_PRIVATE_KEY}" > "${HOME}/.ssh/id_trackway_deploy"
+          chmod 600 "${HOME}/.ssh/id_trackway_deploy"
+
+      - name: Setup known_hosts
+        run: |
+          set -euo pipefail
+          port="${DEPLOY_SSH_PORT:-22}"
+          if [ -n "${DEPLOY_SSH_KNOWN_HOSTS}" ]; then
+            printf '%s\n' "${DEPLOY_SSH_KNOWN_HOSTS}" >> "${HOME}/.ssh/known_hosts"
+          else
+            ssh-keyscan -H -p "${port}" "${DEPLOY_SSH_HOST}" >> "${HOME}/.ssh/known_hosts"
+          fi
+          chmod 644 "${HOME}/.ssh/known_hosts"
+
+      - name: Ensure remote directories
+        run: |
+          set -euo pipefail
+          port="${DEPLOY_SSH_PORT:-22}"
+          ssh -i "${HOME}/.ssh/id_trackway_deploy" -p "${port}" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            "${DEPLOY_SSH_USER}@${DEPLOY_SSH_HOST}" \
+            "mkdir -p '${DEPLOY_DIR}' '${BACKUP_DIR}'"
+
+      - name: Sync repo to server
+        run: |
+          set -euo pipefail
+          port="${DEPLOY_SSH_PORT:-22}"
+          rsync -az --delete \
+            --exclude '.git' \
+            --exclude 'config.yaml' \
+            --exclude 'backups/' \
+            -e "ssh -i ${HOME}/.ssh/id_trackway_deploy -p ${port} -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes" \
+            "${GITHUB_WORKSPACE}/" "${DEPLOY_SSH_USER}@${DEPLOY_SSH_HOST}:${DEPLOY_DIR}/"
+
+      - name: Write runtime config from secret (optional)
+        if: ${{ secrets.TRACKWAY_CONFIG_YAML != '' }}
+        run: |
+          set -euo pipefail
+          port="${DEPLOY_SSH_PORT:-22}"
+          config_b64="$(printf '%s' "${TRACKWAY_CONFIG_YAML}" | base64 -w0)"
+          ssh -i "${HOME}/.ssh/id_trackway_deploy" -p "${port}" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            "${DEPLOY_SSH_USER}@${DEPLOY_SSH_HOST}" \
+            "umask 077 && printf '%s' '${config_b64}' | base64 -d > '${TRACKWAY_CONFIG_PATH}'"
+
+      - name: Deploy on server
+        run: |
+          set -euo pipefail
+          port="${DEPLOY_SSH_PORT:-22}"
+          ghcr_user_b64="$(printf '%s' "${GHCR_USERNAME}" | base64 -w0)"
+          ghcr_token_b64="$(printf '%s' "${GHCR_TOKEN}" | base64 -w0)"
+          ssh -i "${HOME}/.ssh/id_trackway_deploy" -p "${port}" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            "${DEPLOY_SSH_USER}@${DEPLOY_SSH_HOST}" \
+            "DEPLOY_DIR='${DEPLOY_DIR}' BACKUP_DIR='${BACKUP_DIR}' TRACKWAY_CONFIG_PATH='${TRACKWAY_CONFIG_PATH}' COMPOSE_PROJECT_NAME='${COMPOSE_PROJECT_NAME}' BACKUP_KEEP='${BACKUP_KEEP}' HEALTHCHECK_URL='${HEALTHCHECK_URL}' TRACKWAY_IMAGE='${TRACKWAY_IMAGE}' GHCR_USER_B64='${ghcr_user_b64}' GHCR_TOKEN_B64='${ghcr_token_b64}' bash -se" <<'REMOTE'
+          set -euo pipefail
+
+          if [ ! -s "${TRACKWAY_CONFIG_PATH}" ]; then
+            echo "Missing config file at ${TRACKWAY_CONFIG_PATH}" >&2
+            echo "Create it manually on server or set TRACKWAY_CONFIG_YAML secret." >&2
+            exit 1
+          fi
+
+          ghcr_user="$(printf '%s' "${GHCR_USER_B64}" | base64 -d)"
+          ghcr_token="$(printf '%s' "${GHCR_TOKEN_B64}" | base64 -d)"
+          printf '%s' "${ghcr_token}" | docker login ghcr.io -u "${ghcr_user}" --password-stdin
+
+          bash "${DEPLOY_DIR}/scripts/backup-clickhouse.sh" "${DEPLOY_DIR}" "${BACKUP_DIR}"
+
+          TRACKWAY_IMAGE="${TRACKWAY_IMAGE}" docker compose \
+            --project-name "${COMPOSE_PROJECT_NAME}" \
+            -f "${DEPLOY_DIR}/docker-compose.yml" \
+            pull trackway
+
+          TRACKWAY_IMAGE="${TRACKWAY_IMAGE}" docker compose \
+            --project-name "${COMPOSE_PROJECT_NAME}" \
+            -f "${DEPLOY_DIR}/docker-compose.yml" \
+            up -d --remove-orphans
+
+          for _ in $(seq 1 45); do
+            if curl -fsS "${HEALTHCHECK_URL}" >/dev/null; then
+              echo "Deployment health check passed."
+              exit 0
+            fi
+            sleep 2
+          done
+
+          echo "Health check failed after deployment." >&2
+          TRACKWAY_IMAGE="${TRACKWAY_IMAGE}" docker compose \
+            --project-name "${COMPOSE_PROJECT_NAME}" \
+            -f "${DEPLOY_DIR}/docker-compose.yml" ps
+          TRACKWAY_IMAGE="${TRACKWAY_IMAGE}" docker compose \
+            --project-name "${COMPOSE_PROJECT_NAME}" \
+            -f "${DEPLOY_DIR}/docker-compose.yml" logs --tail=120
+          exit 1
+          REMOTE

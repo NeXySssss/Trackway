@@ -1,3 +1,5 @@
+name: trackway
+
 services:
   clickhouse:
     image: clickhouse/clickhouse-server:24.8
@@ -18,7 +20,7 @@ services:
 
   trackway:
     build: .
-    image: trackway:latest
+    image: "${TRACKWAY_IMAGE:-trackway:latest}"
     container_name: trackway
     restart: unless-stopped
     depends_on:
@@ -32,7 +34,8 @@ services:
     ports:
       - "8083:8080"
     volumes:
-      - ./config.yaml:/app/config.yaml:ro
+      - "${TRACKWAY_CONFIG_PATH:-./config.yaml}:/app/config.yaml:ro"
 
 volumes:
   clickhouse-data:
+    name: trackway-clickhouse-data
