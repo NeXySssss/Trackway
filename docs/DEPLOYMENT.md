@@ -152,7 +152,7 @@ Workflow will write it to `/opt/trackway/config.yaml` on each deploy.
 
 No extra scripts needed:
 - Push to `main` triggers `.github/workflows/ci-cd.yml`.
-- It runs tests, builds/pushes image to GHCR, uploads repo to `/opt/trackway` over SSH, creates ClickHouse backup, pulls new image, runs `docker compose up -d`.
+- It runs tests, builds/pushes image to GHCR, uploads repo to `/opt/trackway` over SSH, creates ClickHouse backup, starts ClickHouse and waits for health, then pulls and starts `trackway`.
 
 First bootstrap deployment can be run manually:
 

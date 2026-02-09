@@ -34,8 +34,10 @@ fi
 timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
 archive_name="clickhouse-${timestamp}.tar.gz"
 archive_path="${BACKUP_DIR}/${archive_name}"
+backup_container="trackway-ch-backup-${timestamp}"
 
 docker run --rm \
+  --name "${backup_container}" \
   -v "${volume_name}:/var/lib/clickhouse:ro" \
   -v "${BACKUP_DIR}:/backup" \
   alpine:3.20 \

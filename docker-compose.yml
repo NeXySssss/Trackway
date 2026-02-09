@@ -14,10 +14,10 @@ services:
       - clickhouse-data:/var/lib/clickhouse
     healthcheck:
       test: ["CMD", "clickhouse-client", "--host=127.0.0.1", "--query=SELECT 1"]
-      start_period: 25s
-      interval: 10s
+      start_period: 40s
+      interval: 5s
       timeout: 5s
-      retries: 20
+      retries: 30
     networks:
       - trackway-net
 

@@ -209,19 +209,74 @@ jobs:
 
           ghcr_user="$(printf '%s' "${GHCR_USER_B64}" | base64 -d)"
           ghcr_token="$(printf '%s' "${GHCR_TOKEN_B64}" | base64 -d)"
-          printf '%s' "${ghcr_token}" | docker login ghcr.io -u "${ghcr_user}" --password-stdin
+          export DOCKER_CONFIG="/tmp/trackway-docker-auth"
+          cleanup_docker_auth() {
+            rm -rf "${DOCKER_CONFIG}"
+          }
+          trap cleanup_docker_auth EXIT
+          rm -rf "${DOCKER_CONFIG}"
+          mkdir -p "${DOCKER_CONFIG}"
+          printf '%s' "${ghcr_token}" | docker --config "${DOCKER_CONFIG}" login ghcr.io -u "${ghcr_user}" --password-stdin
 
           bash "${DEPLOY_DIR}/scripts/backup-clickhouse.sh" "${DEPLOY_DIR}" "${BACKUP_DIR}"
 
-          TRACKWAY_IMAGE="${TRACKWAY_IMAGE}" docker compose \
+          TRACKWAY_IMAGE="${TRACKWAY_IMAGE}" docker --config "${DOCKER_CONFIG}" compose \
+            --project-name "${COMPOSE_PROJECT_NAME}" \
+            -f "${DEPLOY_DIR}/docker-compose.yml" \
+            up -d clickhouse
+
+          clickhouse_container="$(TRACKWAY_IMAGE="${TRACKWAY_IMAGE}" docker --config "${DOCKER_CONFIG}" compose \
+            --project-name "${COMPOSE_PROJECT_NAME}" \
+            -f "${DEPLOY_DIR}/docker-compose.yml" \
+            ps -q clickhouse)"
+          if [ -z "${clickhouse_container}" ]; then
+            echo "Failed to resolve clickhouse container id." >&2
+            TRACKWAY_IMAGE="${TRACKWAY_IMAGE}" docker --config "${DOCKER_CONFIG}" compose \
+              --project-name "${COMPOSE_PROJECT_NAME}" \
+              -f "${DEPLOY_DIR}/docker-compose.yml" logs --tail=200 clickhouse
+            exit 1
+          fi
+
+          clickhouse_ready=0
+          for _ in $(seq 1 90); do
+            health_status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}' "${clickhouse_container}" 2>/dev/null || echo unknown)"
+            if [ "${health_status}" = "healthy" ]; then
+              clickhouse_ready=1
+              break
+            fi
+            if [ "${health_status}" = "unhealthy" ] || [ "${health_status}" = "exited" ] || [ "${health_status}" = "dead" ]; then
+              echo "ClickHouse is ${health_status}." >&2
+              TRACKWAY_IMAGE="${TRACKWAY_IMAGE}" docker --config "${DOCKER_CONFIG}" compose \
+                --project-name "${COMPOSE_PROJECT_NAME}" \
+                -f "${DEPLOY_DIR}/docker-compose.yml" ps
+              TRACKWAY_IMAGE="${TRACKWAY_IMAGE}" docker --config "${DOCKER_CONFIG}" compose \
+                --project-name "${COMPOSE_PROJECT_NAME}" \
+                -f "${DEPLOY_DIR}/docker-compose.yml" logs --tail=200 clickhouse
+              exit 1
+            fi
+            sleep 2
+          done
+
+          if [ "${clickhouse_ready}" -ne 1 ]; then
+            echo "ClickHouse did not become healthy in time." >&2
+            TRACKWAY_IMAGE="${TRACKWAY_IMAGE}" docker --config "${DOCKER_CONFIG}" compose \
+              --project-name "${COMPOSE_PROJECT_NAME}" \
+              -f "${DEPLOY_DIR}/docker-compose.yml" ps
+            TRACKWAY_IMAGE="${TRACKWAY_IMAGE}" docker --config "${DOCKER_CONFIG}" compose \
+              --project-name "${COMPOSE_PROJECT_NAME}" \
+              -f "${DEPLOY_DIR}/docker-compose.yml" logs --tail=200 clickhouse
+            exit 1
+          fi
+
+          TRACKWAY_IMAGE="${TRACKWAY_IMAGE}" docker --config "${DOCKER_CONFIG}" compose \
             --project-name "${COMPOSE_PROJECT_NAME}" \
             -f "${DEPLOY_DIR}/docker-compose.yml" \
             pull trackway
 
-          TRACKWAY_IMAGE="${TRACKWAY_IMAGE}" docker compose \
+          TRACKWAY_IMAGE="${TRACKWAY_IMAGE}" docker --config "${DOCKER_CONFIG}" compose \
             --project-name "${COMPOSE_PROJECT_NAME}" \
             -f "${DEPLOY_DIR}/docker-compose.yml" \
-            up -d --remove-orphans
+            up -d trackway --remove-orphans
 
           for _ in $(seq 1 45); do
             if curl -fsS "${HEALTHCHECK_URL}" >/dev/null; then
@@ -232,10 +287,10 @@ jobs:
           done
 
           echo "Health check failed after deployment." >&2
-          TRACKWAY_IMAGE="${TRACKWAY_IMAGE}" docker compose \
+          TRACKWAY_IMAGE="${TRACKWAY_IMAGE}" docker --config "${DOCKER_CONFIG}" compose \
             --project-name "${COMPOSE_PROJECT_NAME}" \
             -f "${DEPLOY_DIR}/docker-compose.yml" ps
-          TRACKWAY_IMAGE="${TRACKWAY_IMAGE}" docker compose \
+          TRACKWAY_IMAGE="${TRACKWAY_IMAGE}" docker --config "${DOCKER_CONFIG}" compose \
             --project-name "${COMPOSE_PROJECT_NAME}" \
             -f "${DEPLOY_DIR}/docker-compose.yml" logs --tail=120
           exit 1
