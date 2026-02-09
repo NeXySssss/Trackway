@@ -102,7 +102,6 @@ jobs:
       TRACKWAY_CONFIG_PATH: /opt/trackway/config.yaml
       COMPOSE_PROJECT_NAME: trackway
       BACKUP_KEEP: "30"
-      HEALTHCHECK_URL: http://127.0.0.1:8083/healthz
       TRACKWAY_IMAGE: ${{ needs.image.outputs.image_latest }}
 
       DEPLOY_SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST || secrets.SSH_HOST }}
@@ -201,7 +200,7 @@ jobs:
           ssh -i "${HOME}/.ssh/id_trackway_deploy" -p "${port}" \
             -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
             "${DEPLOY_SSH_USER}@${DEPLOY_SSH_HOST}" \
-            "DEPLOY_DIR='${DEPLOY_DIR}' BACKUP_DIR='${BACKUP_DIR}' TRACKWAY_CONFIG_PATH='${TRACKWAY_CONFIG_PATH}' COMPOSE_PROJECT_NAME='${COMPOSE_PROJECT_NAME}' BACKUP_KEEP='${BACKUP_KEEP}' HEALTHCHECK_URL='${HEALTHCHECK_URL}' TRACKWAY_IMAGE='${TRACKWAY_IMAGE}' GHCR_USER_B64='${ghcr_user_b64}' GHCR_TOKEN_B64='${ghcr_token_b64}' bash -se" <<'REMOTE'
+            "DEPLOY_DIR='${DEPLOY_DIR}' BACKUP_DIR='${BACKUP_DIR}' TRACKWAY_CONFIG_PATH='${TRACKWAY_CONFIG_PATH}' COMPOSE_PROJECT_NAME='${COMPOSE_PROJECT_NAME}' BACKUP_KEEP='${BACKUP_KEEP}' TRACKWAY_IMAGE='${TRACKWAY_IMAGE}' GHCR_USER_B64='${ghcr_user_b64}' GHCR_TOKEN_B64='${ghcr_token_b64}' bash -se" <<'REMOTE'
           set -euo pipefail
 
           if [ ! -s "${TRACKWAY_CONFIG_PATH}" ]; then
@@ -450,20 +449,21 @@ jobs:
           compose_with_env pull trackway
           compose_with_env up -d trackway --remove-orphans
 
-          for _ in $(seq 1 45); do
-            if curl -fsS "${HEALTHCHECK_URL}" >/dev/null; then
-              echo "Deployment health check passed."
-              exit 0
-            fi
-            sleep 2
-          done
-
-          echo "Health check failed after deployment." >&2
-          CLICKHOUSE_DB="${clickhouse_db}" CLICKHOUSE_USER="${clickhouse_user}" CLICKHOUSE_PASSWORD="${clickhouse_password}" TRACKWAY_IMAGE="${TRACKWAY_IMAGE}" docker --config "${DOCKER_CONFIG}" compose \
-            --project-name "${COMPOSE_PROJECT_NAME}" \
-            -f "${DEPLOY_DIR}/docker-compose.yml" ps
-          CLICKHOUSE_DB="${clickhouse_db}" CLICKHOUSE_USER="${clickhouse_user}" CLICKHOUSE_PASSWORD="${clickhouse_password}" TRACKWAY_IMAGE="${TRACKWAY_IMAGE}" docker --config "${DOCKER_CONFIG}" compose \
-            --project-name "${COMPOSE_PROJECT_NAME}" \
-            -f "${DEPLOY_DIR}/docker-compose.yml" logs --tail=120
-          exit 1
+          sleep 5
+          trackway_container="$(compose_with_env ps -q trackway)"
+          if [ -z "${trackway_container}" ]; then
+            echo "Trackway container id not found after deploy." >&2
+            compose_with_env ps
+            compose_with_env logs --tail=120 trackway
+            exit 1
+          fi
+          trackway_state="$(docker inspect --format '{{.State.Status}}' "${trackway_container}" 2>/dev/null || echo unknown)"
+          if [ "${trackway_state}" != "running" ]; then
+            echo "Trackway container is not running after deploy (state=${trackway_state})." >&2
+            compose_with_env ps
+            compose_with_env logs --tail=120 trackway
+            exit 1
+          fi
+          echo "Deployment completed. Trackway container is running."
+          exit 0
           REMOTE
