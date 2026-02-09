@@ -139,7 +139,7 @@ Create `/opt/trackway/config.yaml` manually:
 ```bash
 cp /opt/trackway/config.yaml /opt/trackway/config.yaml.bak 2>/dev/null || true
 nano /opt/trackway/config.yaml
-chmod 600 /opt/trackway/config.yaml
+chmod 644 /opt/trackway/config.yaml
 ```
 
 ### Option B: GitHub secret
