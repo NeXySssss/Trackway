@@ -110,7 +110,6 @@ jobs:
 
       GHCR_USERNAME: ${{ github.actor }}
       GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      CLICKHOUSE_PASSWORD: ${{ secrets.CLICKHOUSE_PASSWORD || secrets.TRACKWAY_CLICKHOUSE_PASSWORD || '' }}
       TRACKWAY_CONFIG_YAML: ${{ secrets.TRACKWAY_CONFIG_YAML }}
     steps:
       - name: Checkout
@@ -196,11 +195,10 @@ jobs:
           port="${DEPLOY_SSH_PORT:-22}"
           ghcr_user_b64="$(printf '%s' "${GHCR_USERNAME}" | base64 -w0)"
           ghcr_token_b64="$(printf '%s' "${GHCR_TOKEN}" | base64 -w0)"
-          clickhouse_password_b64="$(printf '%s' "${CLICKHOUSE_PASSWORD}" | base64 -w0)"
           ssh -i "${HOME}/.ssh/id_trackway_deploy" -p "${port}" \
             -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
             "${DEPLOY_SSH_USER}@${DEPLOY_SSH_HOST}" \
-            "DEPLOY_DIR='${DEPLOY_DIR}' BACKUP_DIR='${BACKUP_DIR}' TRACKWAY_CONFIG_PATH='${TRACKWAY_CONFIG_PATH}' COMPOSE_PROJECT_NAME='${COMPOSE_PROJECT_NAME}' BACKUP_KEEP='${BACKUP_KEEP}' HEALTHCHECK_URL='${HEALTHCHECK_URL}' TRACKWAY_IMAGE='${TRACKWAY_IMAGE}' GHCR_USER_B64='${ghcr_user_b64}' GHCR_TOKEN_B64='${ghcr_token_b64}' CLICKHOUSE_PASSWORD_B64='${clickhouse_password_b64}' bash -se" <<'REMOTE'
+            "DEPLOY_DIR='${DEPLOY_DIR}' BACKUP_DIR='${BACKUP_DIR}' TRACKWAY_CONFIG_PATH='${TRACKWAY_CONFIG_PATH}' COMPOSE_PROJECT_NAME='${COMPOSE_PROJECT_NAME}' BACKUP_KEEP='${BACKUP_KEEP}' HEALTHCHECK_URL='${HEALTHCHECK_URL}' TRACKWAY_IMAGE='${TRACKWAY_IMAGE}' GHCR_USER_B64='${ghcr_user_b64}' GHCR_TOKEN_B64='${ghcr_token_b64}' bash -se" <<'REMOTE'
           set -euo pipefail
 
           if [ ! -s "${TRACKWAY_CONFIG_PATH}" ]; then
@@ -216,11 +214,74 @@ jobs:
 
           ghcr_user="$(printf '%s' "${GHCR_USER_B64}" | base64 -d)"
           ghcr_token="$(printf '%s' "${GHCR_TOKEN_B64}" | base64 -d)"
-          if [ -n "${CLICKHOUSE_PASSWORD_B64:-}" ]; then
-            clickhouse_password="$(printf '%s' "${CLICKHOUSE_PASSWORD_B64}" | base64 -d)"
-          else
-            clickhouse_password=""
+
+          # Read ClickHouse values from runtime config so DB and app always use the same credentials.
+          extract_clickhouse_config_value() {
+            local key="$1"
+            local config_path="$2"
+            awk -v target_key="${key}" '
+              function trim(s) {
+                sub(/^[[:space:]]+/, "", s)
+                sub(/[[:space:]]+$/, "", s)
+                return s
+              }
+              BEGIN {
+                in_storage = 0
+                in_clickhouse = 0
+              }
+              /^[[:space:]]*#/ { next }
+              /^[A-Za-z0-9_-]+:[[:space:]]*$/ {
+                key = $1
+                sub(/:$/, "", key)
+                in_storage = (key == "storage")
+                if (!in_storage) {
+                  in_clickhouse = 0
+                }
+                next
+              }
+              in_storage && /^[[:space:]]{2}[A-Za-z0-9_-]+:[[:space:]]*$/ {
+                key = $1
+                sub(/:$/, "", key)
+                in_clickhouse = (key == "clickhouse")
+                next
+              }
+              in_storage && in_clickhouse && $0 ~ ("^[[:space:]]{4}" target_key ":[[:space:]]*") {
+                value = $0
+                sub("^[[:space:]]*" target_key ":[[:space:]]*", "", value)
+                value = trim(value)
+
+                if (value ~ /^".*"$/) {
+                  sub(/^"/, "", value)
+                  sub(/"$/, "", value)
+                } else if (value ~ /^'\''.*'\''$/) {
+                  sub(/^'\''/, "", value)
+                  sub(/'\''$/, "", value)
+                } else {
+                  sub(/[[:space:]]+#.*$/, "", value)
+                  value = trim(value)
+                }
+                print value
+                found = 1
+                exit
+              }
+              END {
+                if (!found) {
+                  print ""
+                }
+              }
+            ' "${config_path}"
+          }
+
+          clickhouse_db="$(extract_clickhouse_config_value database "${TRACKWAY_CONFIG_PATH}")"
+          clickhouse_user="$(extract_clickhouse_config_value username "${TRACKWAY_CONFIG_PATH}")"
+          clickhouse_password="$(extract_clickhouse_config_value password "${TRACKWAY_CONFIG_PATH}")"
+          if [ -z "${clickhouse_db}" ]; then
+            clickhouse_db="trackway"
           fi
+          if [ -z "${clickhouse_user}" ]; then
+            clickhouse_user="default"
+          fi
+
           export DOCKER_CONFIG="/tmp/trackway-docker-auth"
           cleanup_docker_auth() {
             rm -rf "${DOCKER_CONFIG}"
@@ -232,18 +293,18 @@ jobs:
 
           bash "${DEPLOY_DIR}/scripts/backup-clickhouse.sh" "${DEPLOY_DIR}" "${BACKUP_DIR}"
 
-          CLICKHOUSE_PASSWORD="${clickhouse_password}" TRACKWAY_IMAGE="${TRACKWAY_IMAGE}" docker --config "${DOCKER_CONFIG}" compose \
+          CLICKHOUSE_DB="${clickhouse_db}" CLICKHOUSE_USER="${clickhouse_user}" CLICKHOUSE_PASSWORD="${clickhouse_password}" TRACKWAY_IMAGE="${TRACKWAY_IMAGE}" docker --config "${DOCKER_CONFIG}" compose \
             --project-name "${COMPOSE_PROJECT_NAME}" \
             -f "${DEPLOY_DIR}/docker-compose.yml" \
             up -d clickhouse
 
-          clickhouse_container="$(CLICKHOUSE_PASSWORD="${clickhouse_password}" TRACKWAY_IMAGE="${TRACKWAY_IMAGE}" docker --config "${DOCKER_CONFIG}" compose \
+          clickhouse_container="$(CLICKHOUSE_DB="${clickhouse_db}" CLICKHOUSE_USER="${clickhouse_user}" CLICKHOUSE_PASSWORD="${clickhouse_password}" TRACKWAY_IMAGE="${TRACKWAY_IMAGE}" docker --config "${DOCKER_CONFIG}" compose \
             --project-name "${COMPOSE_PROJECT_NAME}" \
             -f "${DEPLOY_DIR}/docker-compose.yml" \
             ps -q clickhouse)"
           if [ -z "${clickhouse_container}" ]; then
             echo "Failed to resolve clickhouse container id." >&2
-            CLICKHOUSE_PASSWORD="${clickhouse_password}" TRACKWAY_IMAGE="${TRACKWAY_IMAGE}" docker --config "${DOCKER_CONFIG}" compose \
+            CLICKHOUSE_DB="${clickhouse_db}" CLICKHOUSE_USER="${clickhouse_user}" CLICKHOUSE_PASSWORD="${clickhouse_password}" TRACKWAY_IMAGE="${TRACKWAY_IMAGE}" docker --config "${DOCKER_CONFIG}" compose \
               --project-name "${COMPOSE_PROJECT_NAME}" \
               -f "${DEPLOY_DIR}/docker-compose.yml" logs --tail=200 clickhouse
             exit 1
@@ -258,10 +319,10 @@ jobs:
             fi
             if [ "${health_status}" = "unhealthy" ] || [ "${health_status}" = "exited" ] || [ "${health_status}" = "dead" ]; then
               echo "ClickHouse is ${health_status}." >&2
-              CLICKHOUSE_PASSWORD="${clickhouse_password}" TRACKWAY_IMAGE="${TRACKWAY_IMAGE}" docker --config "${DOCKER_CONFIG}" compose \
+              CLICKHOUSE_DB="${clickhouse_db}" CLICKHOUSE_USER="${clickhouse_user}" CLICKHOUSE_PASSWORD="${clickhouse_password}" TRACKWAY_IMAGE="${TRACKWAY_IMAGE}" docker --config "${DOCKER_CONFIG}" compose \
                 --project-name "${COMPOSE_PROJECT_NAME}" \
                 -f "${DEPLOY_DIR}/docker-compose.yml" ps
-              CLICKHOUSE_PASSWORD="${clickhouse_password}" TRACKWAY_IMAGE="${TRACKWAY_IMAGE}" docker --config "${DOCKER_CONFIG}" compose \
+              CLICKHOUSE_DB="${clickhouse_db}" CLICKHOUSE_USER="${clickhouse_user}" CLICKHOUSE_PASSWORD="${clickhouse_password}" TRACKWAY_IMAGE="${TRACKWAY_IMAGE}" docker --config "${DOCKER_CONFIG}" compose \
                 --project-name "${COMPOSE_PROJECT_NAME}" \
                 -f "${DEPLOY_DIR}/docker-compose.yml" logs --tail=200 clickhouse
               exit 1
@@ -271,21 +332,21 @@ jobs:
 
           if [ "${clickhouse_ready}" -ne 1 ]; then
             echo "ClickHouse did not become healthy in time." >&2
-            CLICKHOUSE_PASSWORD="${clickhouse_password}" TRACKWAY_IMAGE="${TRACKWAY_IMAGE}" docker --config "${DOCKER_CONFIG}" compose \
+            CLICKHOUSE_DB="${clickhouse_db}" CLICKHOUSE_USER="${clickhouse_user}" CLICKHOUSE_PASSWORD="${clickhouse_password}" TRACKWAY_IMAGE="${TRACKWAY_IMAGE}" docker --config "${DOCKER_CONFIG}" compose \
               --project-name "${COMPOSE_PROJECT_NAME}" \
               -f "${DEPLOY_DIR}/docker-compose.yml" ps
-            CLICKHOUSE_PASSWORD="${clickhouse_password}" TRACKWAY_IMAGE="${TRACKWAY_IMAGE}" docker --config "${DOCKER_CONFIG}" compose \
+            CLICKHOUSE_DB="${clickhouse_db}" CLICKHOUSE_USER="${clickhouse_user}" CLICKHOUSE_PASSWORD="${clickhouse_password}" TRACKWAY_IMAGE="${TRACKWAY_IMAGE}" docker --config "${DOCKER_CONFIG}" compose \
               --project-name "${COMPOSE_PROJECT_NAME}" \
               -f "${DEPLOY_DIR}/docker-compose.yml" logs --tail=200 clickhouse
             exit 1
           fi
 
-          CLICKHOUSE_PASSWORD="${clickhouse_password}" TRACKWAY_IMAGE="${TRACKWAY_IMAGE}" docker --config "${DOCKER_CONFIG}" compose \
+          CLICKHOUSE_DB="${clickhouse_db}" CLICKHOUSE_USER="${clickhouse_user}" CLICKHOUSE_PASSWORD="${clickhouse_password}" TRACKWAY_IMAGE="${TRACKWAY_IMAGE}" docker --config "${DOCKER_CONFIG}" compose \
             --project-name "${COMPOSE_PROJECT_NAME}" \
             -f "${DEPLOY_DIR}/docker-compose.yml" \
             pull trackway
 
-          CLICKHOUSE_PASSWORD="${clickhouse_password}" TRACKWAY_IMAGE="${TRACKWAY_IMAGE}" docker --config "${DOCKER_CONFIG}" compose \
+          CLICKHOUSE_DB="${clickhouse_db}" CLICKHOUSE_USER="${clickhouse_user}" CLICKHOUSE_PASSWORD="${clickhouse_password}" TRACKWAY_IMAGE="${TRACKWAY_IMAGE}" docker --config "${DOCKER_CONFIG}" compose \
             --project-name "${COMPOSE_PROJECT_NAME}" \
             -f "${DEPLOY_DIR}/docker-compose.yml" \
             up -d trackway --remove-orphans
@@ -299,10 +360,10 @@ jobs:
           done
 
           echo "Health check failed after deployment." >&2
-          CLICKHOUSE_PASSWORD="${clickhouse_password}" TRACKWAY_IMAGE="${TRACKWAY_IMAGE}" docker --config "${DOCKER_CONFIG}" compose \
+          CLICKHOUSE_DB="${clickhouse_db}" CLICKHOUSE_USER="${clickhouse_user}" CLICKHOUSE_PASSWORD="${clickhouse_password}" TRACKWAY_IMAGE="${TRACKWAY_IMAGE}" docker --config "${DOCKER_CONFIG}" compose \
             --project-name "${COMPOSE_PROJECT_NAME}" \
             -f "${DEPLOY_DIR}/docker-compose.yml" ps
-          CLICKHOUSE_PASSWORD="${clickhouse_password}" TRACKWAY_IMAGE="${TRACKWAY_IMAGE}" docker --config "${DOCKER_CONFIG}" compose \
+          CLICKHOUSE_DB="${clickhouse_db}" CLICKHOUSE_USER="${clickhouse_user}" CLICKHOUSE_PASSWORD="${clickhouse_password}" TRACKWAY_IMAGE="${TRACKWAY_IMAGE}" docker --config "${DOCKER_CONFIG}" compose \
             --project-name "${COMPOSE_PROJECT_NAME}" \
             -f "${DEPLOY_DIR}/docker-compose.yml" logs --tail=120
           exit 1

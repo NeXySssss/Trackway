@@ -114,14 +114,14 @@ Set these repository secrets:
 - `DEPLOY_SSH_PRIVATE_KEY` - full private key (`~/.ssh/trackway_deploy`)
 - `DEPLOY_SSH_PORT` - optional, default `22`
 - `DEPLOY_SSH_KNOWN_HOSTS` - optional but recommended (`ssh-keyscan -H <host>`)
-- `CLICKHOUSE_PASSWORD` - optional; set it if `storage.clickhouse.password` in config is not empty
 - `TRACKWAY_CONFIG_YAML` - optional full runtime config YAML
 
 GHCR login for build/push and deploy uses built-in `${{ secrets.GITHUB_TOKEN }}`.
 
 Legacy secret names are also accepted:
 - `SSH_HOST`, `SSH_USER`, `SSH_PRIVATE_KEY`, `SSH_PORT`, `SSH_KNOWN_HOSTS`
-- `TRACKWAY_CLICKHOUSE_PASSWORD`
+
+ClickHouse credentials are taken from `/opt/trackway/config.yaml` (`storage.clickhouse.database`, `storage.clickhouse.username`, `storage.clickhouse.password`) at deploy time.
 
 Create `known_hosts` value:
 

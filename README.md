@@ -120,7 +120,7 @@ Quick 502 checklist:
 - SSH secrets for deploy: `DEPLOY_SSH_HOST`, `DEPLOY_SSH_USER`, `DEPLOY_SSH_PRIVATE_KEY` (and optional `DEPLOY_SSH_PORT`, `DEPLOY_SSH_KNOWN_HOSTS`)
 - Legacy SSH secret aliases also work: `SSH_HOST`, `SSH_USER`, `SSH_PRIVATE_KEY`, `SSH_PORT`, `SSH_KNOWN_HOSTS`
 - GHCR auth uses built-in `GITHUB_TOKEN` from GitHub Actions
-- If ClickHouse password in config is non-empty, set `CLICKHOUSE_PASSWORD` secret (or `TRACKWAY_CLICKHOUSE_PASSWORD`)
+- ClickHouse `database/username/password` are now read directly from `/opt/trackway/config.yaml` during deploy (no extra DB password secret required)
 
 ## Frontend build
 Astro assets are built once and embedded into the Go binary.
