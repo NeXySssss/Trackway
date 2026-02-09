@@ -46,9 +46,9 @@ storage:
 dashboard:
   enabled: true
   listen_address: ":8080"
-  public_url: "http://127.0.0.1:8080"
+  public_url: "https://s2-lt.nexy.one"
   auth_token_ttl_seconds: 300
-  secure_cookie: false
+  secure_cookie: true
 targets:
   - name: "track-ssh"
     address: "100.64.0.10"
@@ -86,6 +86,17 @@ Compose config in `docker-compose.yml`:
 - config mounted read-only `./config.yaml:/app/config.yaml:ro`
 - runtime user is `root` to avoid host/volume UID permission issues
 - dashboard published on `http://localhost:8080`
+
+## Caddy reverse proxy
+Example Caddy config: `docs/Caddyfile.example`
+
+Checklist for `502 Bad Gateway`:
+1. Trackway process is running and listening on `:8080`.
+2. `dashboard.public_url` matches your public domain exactly (`https://s2-lt.nexy.one`).
+3. Caddy upstream points to the real backend (`127.0.0.1:8080` on same host, or service name in Docker network).
+4. Health endpoint works from proxy host:
+   - `curl http://127.0.0.1:8080/healthz`
+5. If using HTTPS domain, `secure_cookie: true`.
 
 ## Stop
 ```powershell

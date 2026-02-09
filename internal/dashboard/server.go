@@ -70,6 +70,7 @@ func New(cfg config.Dashboard, provider DataProvider) (*Server, error) {
 	}
 
 	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", srv.handleHealth)
 	mux.HandleFunc("/auth/verify", srv.handleAuthVerify)
 	mux.HandleFunc("/auth/logout", srv.handleAuthLogout)
 	mux.HandleFunc("/api/auth/session", srv.handleAuthSession)
@@ -85,22 +86,35 @@ func New(cfg config.Dashboard, provider DataProvider) (*Server, error) {
 }
 
 func (s *Server) ListenAndServe(ctx context.Context) error {
-	shutdownDone := make(chan struct{})
+	stop := make(chan struct{})
 	go func() {
-		defer close(shutdownDone)
-		<-ctx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = s.httpServer.Shutdown(shutdownCtx)
+		select {
+		case <-ctx.Done():
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = s.httpServer.Shutdown(shutdownCtx)
+		case <-stop:
+			return
+		}
 	}()
+	defer close(stop)
 
 	s.logger.Info("dashboard listening", "addr", s.listenAddr)
 	err := s.httpServer.ListenAndServe()
-	<-shutdownDone
-	if err == nil || errors.Is(err, http.ErrServerClosed) {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, http.ErrServerClosed) && ctx.Err() != nil {
 		return nil
 	}
 	return err
+}
+
+func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":   true,
+		"time": time.Now().UTC().Format(time.RFC3339),
+	})
 }
 
 func (s *Server) NewAuthLink() (string, error) {

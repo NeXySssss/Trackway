@@ -13,9 +13,9 @@ storage:
 dashboard:
   enabled: true
   listen_address: ":8080"
-  public_url: "http://127.0.0.1:8080"
+  public_url: "https://s2-lt.nexy.one"
   auth_token_ttl_seconds: 300
-  secure_cookie: false
+  secure_cookie: true
 
 targets:
   - name: "track-ssh"

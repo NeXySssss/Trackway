@@ -1,0 +1,11 @@
+s2-lt.nexy.one {
+	encode zstd gzip
+
+	# If trackway runs on the same host:
+	reverse_proxy 127.0.0.1:8080 {
+		health_uri /healthz
+		health_interval 10s
+		health_timeout 2s
+	}
+}
+
