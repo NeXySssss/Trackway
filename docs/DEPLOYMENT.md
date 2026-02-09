@@ -182,6 +182,11 @@ curl -fsS http://127.0.0.1:8083/healthz
 ls -lh /opt/trackway/backups
 ```
 
+Note:
+- `trackway` listens on `127.0.0.1:8083` on the host (for Caddy local reverse_proxy).
+- `clickhouse` and `trackway` are connected through shared Docker network (`trackway-net`).
+- In containerized mode, set `storage.clickhouse.addr: "clickhouse:9000"` in `/opt/trackway/config.yaml`.
+
 ## 10. Restore ClickHouse from backup
 
 Pick backup archive:

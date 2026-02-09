@@ -96,7 +96,8 @@ docker compose up -d --build
 Current compose:
 - starts `clickhouse` + `trackway`
 - mounts `./config.yaml` read-only
-- exposes dashboard at `http://localhost:8083` (container listens on `:8080`)
+- keeps `clickhouse` and `trackway` in the same Docker network
+- exposes dashboard only on local host `http://127.0.0.1:8083` (container listens on `:8080`) for reverse proxy (Caddy/Nginx)
 
 Stop:
 ```powershell

@@ -13,10 +13,13 @@ services:
     volumes:
       - clickhouse-data:/var/lib/clickhouse
     healthcheck:
-      test: ["CMD-SHELL", "clickhouse-client --query='SELECT 1'"]
+      test: ["CMD", "clickhouse-client", "--host=127.0.0.1", "--query=SELECT 1"]
+      start_period: 25s
       interval: 10s
-      timeout: 3s
-      retries: 10
+      timeout: 5s
+      retries: 20
+    networks:
+      - trackway-net
 
   trackway:
     build: .
@@ -32,10 +35,16 @@ services:
     environment:
       CONFIG_PATH: /app/config.yaml
     ports:
-      - "8083:8080"
+      - "127.0.0.1:8083:8080"
     volumes:
       - "${TRACKWAY_CONFIG_PATH:-./config.yaml}:/app/config.yaml:ro"
+    networks:
+      - trackway-net
 
 volumes:
   clickhouse-data:
     name: trackway-clickhouse-data
+
+networks:
+  trackway-net:
+    name: trackway-net
