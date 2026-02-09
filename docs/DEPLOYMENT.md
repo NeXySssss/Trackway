@@ -63,7 +63,7 @@ cd ~/actions-runner
 ./config.sh \
   --url https://github.com/<OWNER>/<REPO> \
   --token <RUNNER_TOKEN> \
-  --labels self-hosted,linux,x64,trackway \
+  --labels self-hosted,linux,x64 \
   --unattended
 '
 ```
@@ -206,4 +206,4 @@ docker compose --project-name trackway -f /opt/trackway/docker-compose.yml ps
 - Protect `main` branch:
   - Require PR and passing checks.
 - Keep Actions enabled for repository.
-- Ensure self-hosted runner has labels `self-hosted` and `trackway`.
+- Ensure self-hosted runner has labels `self-hosted`, `Linux`, and `X64`.

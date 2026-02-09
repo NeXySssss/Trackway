@@ -10,7 +10,8 @@ jobs:
     name: Backup ClickHouse over SSH
     runs-on:
       - self-hosted
-      - trackway
+      - Linux
+      - X64
     env:
       DEPLOY_DIR: /opt/trackway
       BACKUP_DIR: /opt/trackway/backups

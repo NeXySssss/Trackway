@@ -41,7 +41,8 @@ jobs:
     name: Build and Push Image
     runs-on:
       - self-hosted
-      - trackway
+      - Linux
+      - X64
     needs:
       - test
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
@@ -87,7 +88,8 @@ jobs:
     name: Deploy over SSH
     runs-on:
       - self-hosted
-      - trackway
+      - Linux
+      - X64
     needs:
       - image
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
