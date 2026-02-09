@@ -38,6 +38,8 @@ type Server struct {
 	logger       *slog.Logger
 	provider     DataProvider
 	auth         *authManager
+	miniApp      *miniAppVerifier
+	miniAppOn    bool
 	listenAddr   string
 	publicURL    string
 	secureCookie bool
@@ -45,7 +47,7 @@ type Server struct {
 	httpServer   *http.Server
 }
 
-func New(cfg config.Dashboard, provider DataProvider) (*Server, error) {
+func New(cfg config.Dashboard, botToken string, provider DataProvider) (*Server, error) {
 	if provider == nil {
 		return nil, errors.New("dashboard data provider is required")
 	}
@@ -64,6 +66,8 @@ func New(cfg config.Dashboard, provider DataProvider) (*Server, error) {
 		logger:       slog.Default(),
 		provider:     provider,
 		auth:         newAuthManager(tokenTTL, sessionMaxAge),
+		miniApp:      newMiniAppVerifier(botToken, time.Duration(cfg.MiniAppMaxAgeSec)*time.Second),
+		miniAppOn:    cfg.MiniAppEnabled,
 		listenAddr:   cfg.ListenAddress,
 		publicURL:    strings.TrimRight(cfg.PublicURL, "/"),
 		secureCookie: cfg.SecureCookie,
@@ -75,6 +79,7 @@ func New(cfg config.Dashboard, provider DataProvider) (*Server, error) {
 	mux.HandleFunc("/auth/verify", srv.handleAuthVerify)
 	mux.HandleFunc("/auth/logout", srv.handleAuthLogout)
 	mux.HandleFunc("/api/auth/session", srv.handleAuthSession)
+	mux.HandleFunc("/api/auth/telegram-miniapp", srv.handleTelegramMiniAppAuth)
 	mux.HandleFunc("/api/status", srv.requireAuth(srv.handleStatus))
 	mux.HandleFunc("/api/logs", srv.requireAuth(srv.handleLogs))
 	mux.Handle("/", srv.staticHandler())
@@ -225,7 +230,8 @@ func (s *Server) handleAuthSession(w http.ResponseWriter, r *http.Request) {
 	sessionID, ok := s.sessionIDFromRequest(r)
 	if !ok {
 		writeJSON(w, http.StatusUnauthorized, map[string]any{
-			"authorized": false,
+			"authorized":       false,
+			"mini_app_enabled": s.miniAppOn && s.miniApp != nil,
 		})
 		return
 	}
@@ -234,14 +240,16 @@ func (s *Server) handleAuthSession(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		s.expireCookie(w)
 		writeJSON(w, http.StatusUnauthorized, map[string]any{
-			"authorized": false,
+			"authorized":       false,
+			"mini_app_enabled": s.miniAppOn && s.miniApp != nil,
 		})
 		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"authorized": true,
-		"expires_at": expiresAt.Format(time.RFC3339),
+		"authorized":       true,
+		"expires_at":       expiresAt.Format(time.RFC3339),
+		"mini_app_enabled": s.miniAppOn && s.miniApp != nil,
 	})
 }
 
@@ -279,7 +287,14 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	days := parseQueryInt(r, "days", 7, 1, 365)
-	limit := parseQueryInt(r, "limit", 1000, 1, 5000)
+	hours := parseQueryInt(r, "hours", 0, 0, 24*365)
+	limit := parseQueryInt(r, "limit", 5000, 1, 50000)
+	if hours > 0 {
+		roundedDays := (hours + 23) / 24
+		if roundedDays > days {
+			days = roundedDays
+		}
+	}
 	rows, ok := s.provider.Logs(track, days, limit)
 	if !ok {
 		writeJSON(w, http.StatusNotFound, map[string]any{
@@ -287,18 +302,73 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	if hours > 0 {
+		cutoff := time.Now().UTC().Add(-time.Duration(hours) * time.Hour)
+		rows = filterRowsByCutoff(rows, cutoff)
+		if len(rows) > limit {
+			rows = rows[len(rows)-limit:]
+		}
+	}
+
+	zone := parseClientZone(r)
 
 	lines := make([]string, 0, len(rows))
 	for _, row := range rows {
-		lines = append(lines, row.Timestamp+"  "+row.Status+"  "+row.Endpoint+"  "+row.Reason)
+		lines = append(lines, formatRowLine(row, zone))
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"track": track,
-		"days":  days,
-		"limit": limit,
-		"rows":  rows,
-		"text":  strings.Join(lines, "\n"),
+		"track":  track,
+		"days":   days,
+		"hours":  hours,
+		"limit":  limit,
+		"rows":   rows,
+		"text":   strings.Join(lines, "\n"),
+		"format": "DD.MM.YYYY HH:mm:ss",
+	})
+}
+
+func (s *Server) handleTelegramMiniAppAuth(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.miniAppOn || s.miniApp == nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{
+			"error": "mini app auth is disabled",
+		})
+		return
+	}
+
+	var payload struct {
+		InitData string `json:"init_data"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{
+			"error": "invalid json body",
+		})
+		return
+	}
+	user, err := s.miniApp.Verify(payload.InitData, time.Now().UTC())
+	if err != nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	sessionID, issueErr := s.auth.CreateSession(time.Now().UTC())
+	if issueErr != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{
+			"error": "failed to create auth session",
+		})
+		return
+	}
+
+	s.setSessionCookie(w, sessionID)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"authorized": true,
+		"user_id":    user.ID,
 	})
 }
 
@@ -394,4 +464,36 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(value)
+}
+
+func filterRowsByCutoff(rows []logstore.Row, cutoff time.Time) []logstore.Row {
+	if len(rows) == 0 {
+		return rows
+	}
+	out := make([]logstore.Row, 0, len(rows))
+	for _, row := range rows {
+		ts, err := time.Parse(time.RFC3339, row.Timestamp)
+		if err != nil {
+			continue
+		}
+		if ts.Before(cutoff) {
+			continue
+		}
+		out = append(out, row)
+	}
+	return out
+}
+
+func parseClientZone(r *http.Request) *time.Location {
+	offsetMin := parseQueryInt(r, "tz_offset_minutes", 0, -14*60, 14*60)
+	return time.FixedZone("client", offsetMin*60)
+}
+
+func formatRowLine(row logstore.Row, loc *time.Location) string {
+	timestamp := row.Timestamp
+	ts, err := time.Parse(time.RFC3339, row.Timestamp)
+	if err == nil {
+		timestamp = ts.In(loc).Format("02.01.2006 15:04:05")
+	}
+	return timestamp + "  " + row.Status + "  " + row.Endpoint + "  " + row.Reason
 }

@@ -49,12 +49,18 @@ func (m *authManager) ConsumeToken(now time.Time, token string) (string, bool) {
 	}
 	delete(m.tokens, token)
 
-	sessionID, err := randomToken(32)
+	sessionID, err := m.createSessionLocked(now)
 	if err != nil {
 		return "", false
 	}
-	m.sessions[sessionID] = now
 	return sessionID, true
+}
+
+func (m *authManager) CreateSession(now time.Time) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.cleanup(now)
+	return m.createSessionLocked(now)
 }
 
 func (m *authManager) Session(now time.Time, sessionID string) (time.Time, bool) {
@@ -94,6 +100,15 @@ func (m *authManager) cleanup(now time.Time) {
 			delete(m.sessions, sessionID)
 		}
 	}
+}
+
+func (m *authManager) createSessionLocked(now time.Time) (string, error) {
+	sessionID, err := randomToken(32)
+	if err != nil {
+		return "", err
+	}
+	m.sessions[sessionID] = now
+	return sessionID, nil
 }
 
 func randomToken(size int) (string, error) {

@@ -1,21 +1,38 @@
 services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8
+    container_name: trackway-clickhouse
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_DB: trackway
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: ""
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --query='SELECT 1'"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
   trackway:
     build: .
     image: trackway:latest
     container_name: trackway
     restart: unless-stopped
-    user: "0:0"
+    depends_on:
+      clickhouse:
+        condition: service_healthy
     read_only: true
     tmpfs:
       - /tmp
     environment:
       CONFIG_PATH: /app/config.yaml
-      LOG_DIR: /data/logs
     ports:
-      - "8080:8080"
+      - "8083:8080"
     volumes:
       - ./config.yaml:/app/config.yaml:ro
-      - trackway-data:/data/logs
 
 volumes:
-  trackway-data:
+  clickhouse-data:

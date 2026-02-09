@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -31,14 +30,19 @@ func main() {
 		os.Exit(1)
 	}
 
-	logDir := strings.TrimSpace(envOrDefault("LOG_DIR", cfg.Storage.LogDir))
-	if logDir == "" {
-		logDir = "logs"
-	}
-
-	store, err := logstore.New(logDir)
+	store, err := logstore.NewClickHouse(logstore.ClickHouseOptions{
+		Addr:         cfg.Storage.ClickHouse.Addr,
+		Database:     cfg.Storage.ClickHouse.Database,
+		Username:     cfg.Storage.ClickHouse.Username,
+		Password:     cfg.Storage.ClickHouse.Password,
+		Table:        cfg.Storage.ClickHouse.Table,
+		Secure:       cfg.Storage.ClickHouse.Secure,
+		DialTimeout:  time.Duration(cfg.Storage.ClickHouse.DialTimeoutSeconds) * time.Second,
+		MaxOpenConns: cfg.Storage.ClickHouse.MaxOpenConns,
+		MaxIdleConns: cfg.Storage.ClickHouse.MaxIdleConns,
+	})
 	if err != nil {
-		fmt.Println("log dir error:", err)
+		fmt.Println("storage init error:", err)
 		os.Exit(1)
 	}
 
@@ -58,7 +62,7 @@ func main() {
 	svc := tracker.New(cfg, store, client)
 	var dash *dashboard.Server
 	if cfg.Dashboard.Enabled {
-		dash, err = dashboard.New(cfg.Dashboard, svc)
+		dash, err = dashboard.New(cfg.Dashboard, cfg.Bot.Token, svc)
 		if err != nil {
 			fmt.Println("dashboard init error:", err)
 			os.Exit(1)

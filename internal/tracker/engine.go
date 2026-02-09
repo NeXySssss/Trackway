@@ -210,8 +210,8 @@ func (e *MonitorEngine) Logs(trackName string, days int, limit int) ([]logstore.
 	if limit <= 0 {
 		limit = 200
 	}
-	if limit > 5000 {
-		limit = 5000
+	if limit > 50000 {
+		limit = 50000
 	}
 
 	e.mu.RLock()

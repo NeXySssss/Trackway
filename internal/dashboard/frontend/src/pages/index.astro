@@ -6,66 +6,42 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Trackway Dashboard</title>
+    <title>Trackway Observability</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Chivo:wght@400;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
     <style>
       :root {
-        --bg: #f0f5f3;
-        --bg-layer-a: #ffffff;
-        --bg-layer-b: #dbf2fb;
-        --bg-layer-c: #eff6f3;
-        --card: #ffffff;
-        --ink: #10242c;
-        --muted: #4a6672;
-        --line: #c7d9d1;
-        --table-head: #f8fbfa;
-        --table-hover: #f8fbfa;
-        --table-active: #edf7fb;
-        --up: #0f8c4a;
-        --up-soft: #e8faef;
-        --down: #d1372f;
-        --down-soft: #ffeceb;
-        --unknown: #7d6f3c;
-        --unknown-soft: #fff8e2;
-        --accent: #016f91;
-        --accent-soft: #d8edf5;
-        --danger: #d1372f;
-        --danger-soft: #fff4f2;
-        --code-bg: #f7fbff;
-        --code-line: #d6e7ef;
-        --chart-grid: #d9e6e1;
+        --bg: #090d14;
+        --bg-b: #0f1623;
+        --panel: #111a2b;
+        --panel-soft: #1a253a;
+        --line: #25344f;
+        --line-strong: #35507a;
+        --ink: #eaf2ff;
+        --muted: #a6b8d7;
+        --accent: #65b8ff;
+        --good: #5cd89a;
+        --bad: #ff6f8f;
+        --warn: #ffc36d;
       }
 
-      :root[data-theme="dark"] {
-        --bg: #0e171d;
-        --bg-layer-a: #19242d;
-        --bg-layer-b: #10303e;
-        --bg-layer-c: #111e25;
-        --card: #17262f;
-        --ink: #e6f0f3;
-        --muted: #9cb2bd;
-        --line: #2e4754;
-        --table-head: #20333f;
-        --table-hover: #1b2c35;
-        --table-active: #1f3b49;
-        --up: #50ce86;
-        --up-soft: #153427;
-        --down: #ff7f7a;
-        --down-soft: #402220;
-        --unknown: #f2cb69;
-        --unknown-soft: #3e361d;
-        --accent: #38a5c8;
-        --accent-soft: #1c3745;
-        --danger: #ff877f;
-        --danger-soft: #432624;
-        --code-bg: #13222b;
-        --code-line: #2b4350;
-        --chart-grid: #2e4652;
+      :root[data-theme="light"] {
+        --bg: #eff3fb;
+        --bg-b: #dfe8fa;
+        --panel: #ffffff;
+        --panel-soft: #f8faff;
+        --line: #d2dcef;
+        --line-strong: #b8c7e5;
+        --ink: #13233e;
+        --muted: #5e7396;
+        --accent: #2d78ea;
+        --good: #198f5e;
+        --bad: #c1304e;
+        --warn: #a77417;
       }
 
       * {
@@ -74,76 +50,60 @@
 
       body {
         margin: 0;
-        min-height: 100vh;
-        font-family: "Chivo", sans-serif;
         color: var(--ink);
+        font-family: "IBM Plex Sans", sans-serif;
         background:
-          radial-gradient(circle at 0% 0%, var(--bg-layer-a), transparent 46%),
-          radial-gradient(circle at 100% 0%, var(--bg-layer-b), transparent 40%),
-          linear-gradient(145deg, var(--bg-layer-c), var(--bg));
+          radial-gradient(1200px 500px at 100% -10%, #1d2840, transparent),
+          radial-gradient(900px 420px at 0% 0%, #1a2741, transparent),
+          linear-gradient(165deg, var(--bg), var(--bg-b));
+        min-height: 100vh;
       }
 
-      .dashboard {
-        width: min(1180px, calc(100% - 2rem));
-        margin: 1.4rem auto 2rem;
-        display: grid;
-        grid-template-columns: 1fr;
-        gap: 1rem;
-      }
-
-      .hero {
-        background: var(--card);
-        border: 1px solid var(--line);
-        border-radius: 14px;
-        padding: 1rem 1.1rem;
-        box-shadow: 0 14px 28px rgba(8, 16, 20, 0.12);
+      main {
+        width: min(1440px, calc(100% - 1.4rem));
+        margin: 0.8rem auto 1.4rem;
         display: grid;
         gap: 0.85rem;
       }
 
-      .hero-top {
+      .panel {
+        background: linear-gradient(160deg, color-mix(in srgb, var(--panel) 90%, #000 10%), var(--panel));
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        box-shadow: 0 16px 36px rgba(0, 0, 0, 0.2);
+      }
+
+      .header {
+        padding: 0.8rem 0.9rem;
+        display: grid;
+        gap: 0.65rem;
+      }
+
+      .header-row {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        gap: 1rem;
+        flex-wrap: wrap;
+        gap: 0.55rem;
       }
 
       h1 {
         margin: 0;
-        font-size: clamp(1.24rem, 2.8vw, 1.8rem);
-        letter-spacing: 0.02em;
+        font-size: clamp(1.08rem, 2.6vw, 1.5rem);
+        font-weight: 600;
+        letter-spacing: 0.01em;
       }
 
       .subtitle {
-        margin: 0.25rem 0 0;
+        margin: 0.16rem 0 0;
         color: var(--muted);
-        font-size: 0.93rem;
-      }
-
-      .meta {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.5rem;
-      }
-
-      .chip {
-        border: 1px solid var(--line);
-        border-radius: 999px;
-        font-size: 0.8rem;
-        padding: 0.36rem 0.68rem;
-        background: color-mix(in srgb, var(--card) 78%, var(--accent-soft) 22%);
-        color: var(--ink);
-      }
-
-      .chip strong {
-        font-weight: 700;
-        margin-left: 0.18rem;
+        font-size: 0.86rem;
       }
 
       .actions {
         display: flex;
         flex-wrap: wrap;
-        gap: 0.5rem;
+        gap: 0.45rem;
       }
 
       button,
@@ -152,121 +112,111 @@
         font: inherit;
       }
 
-      button {
-        border: 1px solid transparent;
-        border-radius: 10px;
-        padding: 0.52rem 0.84rem;
-        cursor: pointer;
-        transition: transform 0.14s ease, box-shadow 0.14s ease;
+      button,
+      select,
+      input {
+        border: 1px solid var(--line-strong);
+        border-radius: 9px;
+        background: color-mix(in srgb, var(--panel-soft) 92%, var(--accent) 8%);
+        color: var(--ink);
+        padding: 0.43rem 0.65rem;
       }
 
-      button:hover {
-        transform: translateY(-1px);
+      button {
+        cursor: pointer;
       }
 
       .btn-primary {
-        color: #ffffff;
-        background: linear-gradient(140deg, #016f91, #0a8f77);
-        box-shadow: 0 8px 18px rgba(1, 111, 145, 0.22);
-      }
-
-      .btn-ghost {
-        border-color: var(--line);
-        background: color-mix(in srgb, var(--card) 86%, var(--accent-soft) 14%);
-        color: var(--ink);
+        border-color: color-mix(in srgb, var(--accent) 60%, var(--line) 40%);
+        background: linear-gradient(145deg, color-mix(in srgb, var(--accent) 35%, var(--panel) 65%), var(--panel-soft));
       }
 
       .btn-danger {
-        border-color: color-mix(in srgb, var(--danger) 45%, var(--line) 55%);
-        background: var(--danger-soft);
-        color: var(--danger);
+        border-color: color-mix(in srgb, var(--bad) 50%, var(--line) 50%);
+        background: color-mix(in srgb, var(--bad) 17%, var(--panel) 83%);
+        color: color-mix(in srgb, var(--bad) 72%, var(--ink) 28%);
       }
 
-      .panel {
-        background: var(--card);
-        border: 1px solid var(--line);
-        border-radius: 14px;
-        padding: 0.95rem 1rem;
-        box-shadow: 0 12px 24px rgba(8, 16, 20, 0.08);
-      }
-
-      .panel h2 {
-        margin: 0 0 0.75rem;
-        font-size: 1rem;
-      }
-
-      .charts-grid {
-        display: grid;
-        grid-template-columns: 1fr;
-        gap: 0.75rem;
-      }
-
-      .chart-card {
-        border: 1px solid var(--line);
-        border-radius: 12px;
-        padding: 0.75rem;
-        background: color-mix(in srgb, var(--card) 82%, var(--accent-soft) 18%);
-      }
-
-      .chart-card h3 {
-        margin: 0 0 0.45rem;
-        font-size: 0.88rem;
-      }
-
-      .chart-caption {
-        margin: 0.4rem 0 0;
-        color: var(--muted);
-        font-size: 0.78rem;
-      }
-
-      canvas {
-        width: 100%;
-        height: 160px;
-        display: block;
-      }
-
-      .chart-metrics {
-        margin-top: 0.6rem;
+      .chips {
         display: flex;
         flex-wrap: wrap;
         gap: 0.45rem;
       }
 
-      .metric-chip {
-        border: 1px solid var(--line);
+      .chip {
+        border: 1px solid var(--line-strong);
         border-radius: 999px;
-        padding: 0.24rem 0.58rem;
+        padding: 0.26rem 0.56rem;
         font-size: 0.78rem;
+        color: var(--muted);
+        background: color-mix(in srgb, var(--panel-soft) 85%, var(--accent) 15%);
+      }
+
+      .chip strong {
+        margin-left: 0.2rem;
         color: var(--ink);
+      }
+
+      .content-grid {
+        display: grid;
+        gap: 0.85rem;
+        grid-template-columns: 1.25fr 1fr;
+      }
+
+      .chart-panel {
+        padding: 0.72rem 0.8rem 0.68rem;
+      }
+
+      .panel-title {
+        margin: 0 0 0.5rem;
+        font-size: 0.9rem;
+        color: var(--muted);
+      }
+
+      .chart {
+        width: 100%;
+        height: 300px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: color-mix(in srgb, var(--panel-soft) 90%, black 10%);
+      }
+
+      .short-chart {
+        height: 280px;
+      }
+
+      .table-panel,
+      .logs-panel {
+        padding: 0.72rem 0.8rem;
       }
 
       .table-wrap {
         width: 100%;
         overflow: auto;
+        border: 1px solid var(--line);
+        border-radius: 10px;
       }
 
       table {
         width: 100%;
-        border-collapse: collapse;
         min-width: 760px;
+        border-collapse: collapse;
       }
 
       th,
       td {
         text-align: left;
-        border-bottom: 1px solid color-mix(in srgb, var(--line) 72%, transparent 28%);
-        padding: 0.56rem 0.5rem;
-        font-size: 0.9rem;
+        padding: 0.5rem 0.54rem;
+        border-bottom: 1px solid color-mix(in srgb, var(--line) 78%, transparent 22%);
+        font-size: 0.84rem;
       }
 
       th {
-        font-size: 0.78rem;
         color: var(--muted);
+        font-weight: 500;
         text-transform: uppercase;
-        letter-spacing: 0.08em;
-        position: sticky;
-        top: 0;
-        background: var(--table-head);
+        letter-spacing: 0.06em;
+        background: color-mix(in srgb, var(--panel-soft) 95%, var(--accent) 5%);
       }
 
       tbody tr {
@@ -274,91 +224,65 @@
       }
 
       tbody tr:hover {
-        background: var(--table-hover);
+        background: color-mix(in srgb, var(--panel-soft) 88%, var(--accent) 12%);
       }
 
       tbody tr.active {
-        background: var(--table-active);
+        background: color-mix(in srgb, var(--accent) 23%, var(--panel-soft) 77%);
       }
 
-      .badge {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.33rem;
+      .status-pill {
         border-radius: 999px;
-        padding: 0.2rem 0.58rem;
-        font-size: 0.78rem;
-        font-weight: 700;
+        padding: 0.14rem 0.5rem;
+        font-size: 0.74rem;
+        font-weight: 600;
       }
 
-      .badge-up {
-        color: var(--up);
-        background: var(--up-soft);
+      .status-up {
+        background: color-mix(in srgb, var(--good) 20%, var(--panel) 80%);
+        color: var(--good);
       }
 
-      .badge-down {
-        color: var(--down);
-        background: var(--down-soft);
+      .status-down {
+        background: color-mix(in srgb, var(--bad) 20%, var(--panel) 80%);
+        color: var(--bad);
       }
 
-      .badge-unknown {
-        color: var(--unknown);
-        background: var(--unknown-soft);
+      .status-unknown {
+        background: color-mix(in srgb, var(--warn) 18%, var(--panel) 82%);
+        color: var(--warn);
       }
 
-      .logs-controls {
+      .logs-top {
+        display: flex;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 0.52rem;
+        margin-bottom: 0.56rem;
+      }
+
+      .controls {
         display: flex;
         flex-wrap: wrap;
-        gap: 0.62rem;
-        align-items: end;
-        margin-bottom: 0.75rem;
-      }
-
-      .field {
-        display: grid;
-        gap: 0.2rem;
-      }
-
-      .field label {
-        color: var(--muted);
-        font-size: 0.78rem;
-      }
-
-      select,
-      input {
-        min-width: 110px;
-        border: 1px solid var(--line);
-        border-radius: 9px;
-        padding: 0.42rem 0.52rem;
-        background: var(--card);
-        color: var(--ink);
-      }
-
-      .logs-meta {
-        font-size: 0.8rem;
-        color: var(--muted);
-        margin: 0 0 0.54rem;
+        gap: 0.42rem;
       }
 
       pre {
         margin: 0;
-        background: var(--code-bg);
-        border: 1px solid var(--code-line);
-        border-radius: 12px;
-        padding: 0.75rem;
-        font-size: 0.78rem;
-        line-height: 1.42;
-        min-height: 320px;
+        padding: 0.72rem;
+        border-radius: 10px;
+        border: 1px solid var(--line);
+        background: color-mix(in srgb, var(--panel-soft) 92%, #000 8%);
+        font: 0.76rem/1.42 "IBM Plex Mono", monospace;
+        min-height: 260px;
         max-height: 520px;
         overflow: auto;
-        font-family: "IBM Plex Mono", monospace;
-        white-space: pre;
       }
 
       .status-line {
         margin: 0;
-        font-size: 0.82rem;
         color: var(--muted);
+        font-size: 0.78rem;
       }
 
       .auth-gate {
@@ -367,95 +291,119 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        background: rgba(8, 16, 20, 0.64);
-        padding: 1rem;
+        background: rgba(6, 10, 16, 0.78);
+        padding: 0.8rem;
       }
 
       .auth-card {
-        width: min(520px, 100%);
-        background: var(--card);
+        width: min(560px, 100%);
+        border: 1px solid var(--line-strong);
         border-radius: 14px;
-        border: 1px solid var(--line);
-        padding: 1.1rem 1.2rem;
+        background: var(--panel);
+        padding: 1rem;
       }
 
       .auth-card h3 {
-        margin: 0 0 0.48rem;
+        margin: 0 0 0.45rem;
       }
 
       .auth-card p {
-        margin: 0.3rem 0;
+        margin: 0.26rem 0;
         color: var(--muted);
+        font-size: 0.86rem;
       }
 
       .hidden {
         display: none;
       }
 
-      @media (max-width: 760px) {
-        .dashboard {
-          width: calc(100% - 1rem);
-          margin: 0.8rem auto 1rem;
+      @media (max-width: 1060px) {
+        .content-grid {
+          grid-template-columns: 1fr;
         }
 
-        .hero-top {
-          flex-direction: column;
+        .chart {
+          height: 260px;
+        }
+      }
+
+      @media (max-width: 720px) {
+        main {
+          width: calc(100% - 0.74rem);
+          gap: 0.64rem;
+        }
+
+        .header,
+        .chart-panel,
+        .table-panel,
+        .logs-panel {
+          padding: 0.64rem;
+        }
+
+        .header-row {
           align-items: flex-start;
         }
 
-        pre {
-          min-height: 240px;
+        .actions {
+          width: 100%;
+        }
+
+        .actions button,
+        .actions select {
+          flex: 1 1 auto;
+        }
+
+        .chart {
+          height: 230px;
         }
       }
     </style>
   </head>
   <body>
-    <main class="dashboard">
-      <section class="hero">
-        <div class="hero-top">
+    <main>
+      <section class="panel header">
+        <div class="header-row">
           <div>
-            <h1>Trackway Dashboard</h1>
-            <p class="subtitle">TCP statuses, downtime timeline and full track logs.</p>
+            <h1>Trackway Observability Dashboard</h1>
+            <p class="subtitle">Time-series availability, failure trend, and full transport logs.</p>
           </div>
           <div class="actions">
-            <button id="theme-toggle-btn" class="btn-ghost" type="button">Theme</button>
-            <button id="refresh-status-btn" class="btn-primary" type="button">Refresh</button>
+            <select id="range-select">
+              <option value="1">1h</option>
+              <option value="3">3h</option>
+              <option value="6">6h</option>
+              <option value="12">12h</option>
+              <option value="24" selected>24h</option>
+              <option value="48">48h</option>
+            </select>
+            <button id="theme-btn" type="button">Theme</button>
+            <button id="refresh-btn" class="btn-primary" type="button">Refresh</button>
             <button id="logout-btn" class="btn-danger" type="button">Logout</button>
           </div>
         </div>
-        <div class="meta">
+        <div class="chips">
           <span class="chip">Total <strong id="summary-total">0</strong></span>
           <span class="chip">UP <strong id="summary-up">0</strong></span>
           <span class="chip">DOWN <strong id="summary-down">0</strong></span>
           <span class="chip">UNKNOWN <strong id="summary-unknown">0</strong></span>
-          <span class="chip">Session expires <strong id="session-expiry">-</strong></span>
+          <span class="chip">Session <strong id="session-expiry">-</strong></span>
           <span class="chip">Snapshot <strong id="snapshot-time">-</strong></span>
         </div>
       </section>
 
-      <section class="panel">
-        <h2>Charts</h2>
-        <div class="charts-grid">
-          <article class="chart-card">
-            <h3>Current Snapshot (all tracks)</h3>
-            <canvas id="overview-chart" width="960" height="160"></canvas>
-            <p id="overview-caption" class="chart-caption">No data</p>
-          </article>
-          <article class="chart-card">
-            <h3>Track Timeline (from logs)</h3>
-            <canvas id="timeline-chart" width="960" height="160"></canvas>
-            <div class="chart-metrics">
-              <span class="metric-chip">Availability <strong id="availability-rate">-</strong></span>
-              <span class="metric-chip">Down events <strong id="down-events">-</strong></span>
-              <span class="metric-chip">Down rows <strong id="down-rows">-</strong></span>
-            </div>
-            <p id="timeline-caption" class="chart-caption">Choose track to draw timeline</p>
-          </article>
-        </div>
+      <section class="content-grid">
+        <article class="panel chart-panel">
+          <p class="panel-title">Availability Timeline (hover for precise time)</p>
+          <div id="timeline-chart" class="chart"></div>
+        </article>
+        <article class="panel chart-panel">
+          <p class="panel-title">Current State Distribution</p>
+          <div id="distribution-chart" class="chart short-chart"></div>
+        </article>
       </section>
 
-      <section class="panel">
-        <h2>Targets</h2>
+      <section class="panel table-panel">
+        <p class="panel-title">Targets</p>
         <div class="table-wrap">
           <table>
             <thead>
@@ -463,8 +411,8 @@
                 <th>Name</th>
                 <th>Endpoint</th>
                 <th>Status</th>
-                <th>Last Changed (UTC)</th>
-                <th>Last Checked (UTC)</th>
+                <th>Last Changed</th>
+                <th>Last Checked</th>
               </tr>
             </thead>
             <tbody id="status-table-body"></tbody>
@@ -472,369 +420,86 @@
         </div>
       </section>
 
-      <section class="panel">
-        <h2>Logs</h2>
-        <div class="logs-controls">
-          <div class="field">
-            <label for="track-select">Track</label>
+      <section class="panel logs-panel">
+        <div class="logs-top">
+          <p class="panel-title" style="margin: 0;">Logs</p>
+          <div class="controls">
             <select id="track-select"></select>
+            <input id="limit-input" type="number" min="200" max="100000" step="100" value="10000" />
+            <button id="logs-btn" type="button">Load Logs</button>
           </div>
-          <div class="field">
-            <label for="days-input">Days</label>
-            <input id="days-input" type="number" min="1" max="365" value="7" />
-          </div>
-          <div class="field">
-            <label for="limit-input">Rows</label>
-            <input id="limit-input" type="number" min="1" max="5000" value="2000" />
-          </div>
-          <button id="refresh-logs-btn" class="btn-ghost" type="button">Load Logs</button>
         </div>
-        <p id="logs-meta" class="logs-meta">No logs loaded.</p>
+        <p id="logs-meta" class="status-line">No logs loaded.</p>
         <pre id="logs-output">(no data)</pre>
       </section>
+
       <p id="status-line" class="status-line"></p>
     </main>
 
     <div id="auth-gate" class="auth-gate hidden">
       <div class="auth-card">
-        <h3>Dashboard authorization required</h3>
-        <p>Open Telegram and send <code>/authme</code> to your bot.</p>
-        <p>Use the link from the bot message to authorize this browser.</p>
-        <p>Session is valid until browser restart or 24 hours.</p>
+        <h3>Authorization required</h3>
+        <p>Send <code>/authme</code> to your Telegram bot and open the link.</p>
+        <p>If opened inside Telegram Mini App, authorization is attempted automatically.</p>
+        <p>Session remains valid until browser restart or 24 hours.</p>
       </div>
     </div>
 
     <script type="module">
+      import * as echarts from "echarts";
+
       const ui = {
-        tableBody: document.getElementById("status-table-body"),
+        statusTableBody: document.getElementById("status-table-body"),
+        rangeSelect: document.getElementById("range-select"),
         trackSelect: document.getElementById("track-select"),
-        daysInput: document.getElementById("days-input"),
         limitInput: document.getElementById("limit-input"),
         logsOutput: document.getElementById("logs-output"),
         logsMeta: document.getElementById("logs-meta"),
         statusLine: document.getElementById("status-line"),
         authGate: document.getElementById("auth-gate"),
-        refreshStatusBtn: document.getElementById("refresh-status-btn"),
-        refreshLogsBtn: document.getElementById("refresh-logs-btn"),
+        refreshBtn: document.getElementById("refresh-btn"),
+        logsBtn: document.getElementById("logs-btn"),
         logoutBtn: document.getElementById("logout-btn"),
-        themeToggleBtn: document.getElementById("theme-toggle-btn"),
+        themeBtn: document.getElementById("theme-btn"),
         summaryTotal: document.getElementById("summary-total"),
         summaryUp: document.getElementById("summary-up"),
         summaryDown: document.getElementById("summary-down"),
         summaryUnknown: document.getElementById("summary-unknown"),
         sessionExpiry: document.getElementById("session-expiry"),
         snapshotTime: document.getElementById("snapshot-time"),
-        overviewChart: document.getElementById("overview-chart"),
-        timelineChart: document.getElementById("timeline-chart"),
-        overviewCaption: document.getElementById("overview-caption"),
-        timelineCaption: document.getElementById("timeline-caption"),
-        availabilityRate: document.getElementById("availability-rate"),
-        downEvents: document.getElementById("down-events"),
-        downRows: document.getElementById("down-rows")
+        timelineChart: echarts.init(document.getElementById("timeline-chart")),
+        distributionChart: echarts.init(document.getElementById("distribution-chart"))
       };
 
       const state = {
-        authorized: false,
         selectedTrack: "",
+        tracks: [],
         refreshTimer: null,
         logTimer: null,
-        tracks: [],
-        theme: "light"
+        theme: "dark",
+        rows: []
       };
 
-      const THEME_KEY = "trackway_theme";
+      const THEME_KEY = "trackway_theme_v2";
 
-      function setStatusLine(text) {
-        ui.statusLine.textContent = text;
+      function pad2(value) {
+        return String(value).padStart(2, "0");
       }
 
-      function badgeClass(status) {
-        if (status === "UP") return "badge badge-up";
-        if (status === "DOWN") return "badge badge-down";
-        return "badge badge-unknown";
-      }
-
-      function pickCSSColor(name, fallback) {
-        const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-        return value || fallback;
-      }
-
-      function resizeCanvas(canvas) {
-        const dpr = window.devicePixelRatio || 1;
-        const rect = canvas.getBoundingClientRect();
-        const targetWidth = Math.max(10, Math.floor(rect.width * dpr));
-        const targetHeight = Math.max(10, Math.floor(rect.height * dpr));
-        if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
-          canvas.width = targetWidth;
-          canvas.height = targetHeight;
-        }
-      }
-
-      function drawOverviewChart(payload) {
-        const canvas = ui.overviewChart;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) return;
-        resizeCanvas(canvas);
-        const width = canvas.width;
-        const height = canvas.height;
-        ctx.clearRect(0, 0, width, height);
-
-        const values = [
-          { label: "UP", value: payload.up, color: pickCSSColor("--up", "#0f8c4a") },
-          { label: "DOWN", value: payload.down, color: pickCSSColor("--down", "#d1372f") },
-          { label: "UNKNOWN", value: payload.unknown, color: pickCSSColor("--unknown", "#7d6f3c") }
-        ];
-        const maxValue = Math.max(1, ...values.map((item) => item.value));
-        const baseY = Math.floor(height * 0.82);
-        const chartHeight = Math.floor(height * 0.62);
-        const gap = Math.floor(width * 0.05);
-        const barWidth = Math.floor((width - gap * 4) / 3);
-
-        const gridColor = pickCSSColor("--chart-grid", "#d9e6e1");
-        ctx.strokeStyle = gridColor;
-        ctx.lineWidth = 1;
-        for (let i = 0; i <= 4; i++) {
-          const y = Math.floor(baseY - (chartHeight / 4) * i);
-          ctx.beginPath();
-          ctx.moveTo(gap, y);
-          ctx.lineTo(width - gap, y);
-          ctx.stroke();
-        }
-
-        ctx.font = `${Math.floor(height * 0.085)}px Chivo, sans-serif`;
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-
-        values.forEach((item, index) => {
-          const left = gap + gap * index + barWidth * index;
-          const barHeight = Math.floor((item.value / maxValue) * chartHeight);
-          const top = baseY - barHeight;
-
-          ctx.fillStyle = item.color;
-          ctx.fillRect(left, top, barWidth, barHeight);
-
-          ctx.fillStyle = pickCSSColor("--ink", "#10242c");
-          ctx.fillText(`${item.value}`, left + barWidth / 2, top - Math.floor(height * 0.06));
-          ctx.fillText(item.label, left + barWidth / 2, baseY + Math.floor(height * 0.09));
-        });
-
-        const downPercent = payload.total > 0 ? ((payload.down / payload.total) * 100).toFixed(1) : "0.0";
-        ui.overviewCaption.textContent = `Tracks: ${payload.total} | down ratio: ${downPercent}%`;
-      }
-
-      function normalizeRow(row) {
-        return {
-          timestamp: row.timestamp || row.Timestamp || "",
-          status: row.status || row.Status || "",
-          endpoint: row.endpoint || row.Endpoint || "",
-          reason: row.reason || row.Reason || ""
-        };
-      }
-
-      function drawTimelineChart(rows, trackName) {
-        const canvas = ui.timelineChart;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) return;
-        resizeCanvas(canvas);
-        const width = canvas.width;
-        const height = canvas.height;
-        ctx.clearRect(0, 0, width, height);
-
-        if (!rows.length) {
-          ui.timelineCaption.textContent = `Track: ${trackName} | no rows`;
-          ui.availabilityRate.textContent = "-";
-          ui.downEvents.textContent = "-";
-          ui.downRows.textContent = "-";
-          return;
-        }
-
-        const limitRows = rows.slice(Math.max(0, rows.length - 280));
-        const total = limitRows.length;
-        let upRows = 0;
-        let downRows = 0;
-        let downEvents = 0;
-        let prevStatus = "";
-
-        const upColor = pickCSSColor("--up", "#0f8c4a");
-        const downColor = pickCSSColor("--down", "#d1372f");
-        const unknownColor = pickCSSColor("--unknown", "#7d6f3c");
-        const gridColor = pickCSSColor("--chart-grid", "#d9e6e1");
-
-        ctx.fillStyle = gridColor;
-        ctx.fillRect(0, Math.floor(height * 0.52), width, 1);
-
-        const barGap = 1;
-        const fullBarWidth = Math.max(2, Math.floor(width / total));
-        const barWidth = Math.max(1, fullBarWidth - barGap);
-
-        limitRows.forEach((raw, index) => {
-          const row = normalizeRow(raw);
-          let color = unknownColor;
-          if (row.status === "UP") {
-            color = upColor;
-            upRows++;
-          } else if (row.status === "DOWN") {
-            color = downColor;
-            downRows++;
-            if (prevStatus !== "DOWN") {
-              downEvents++;
-            }
-          }
-          prevStatus = row.status;
-
-          const x = Math.floor(index * fullBarWidth);
-          const top = row.status === "DOWN" ? Math.floor(height * 0.52) : Math.floor(height * 0.22);
-          const h = row.status === "DOWN" ? Math.floor(height * 0.33) : Math.floor(height * 0.3);
-          ctx.fillStyle = color;
-          ctx.fillRect(x, top, barWidth, h);
-        });
-
-        const availability = total > 0 ? ((upRows / total) * 100).toFixed(2) : "0.00";
-        ui.availabilityRate.textContent = `${availability}%`;
-        ui.downEvents.textContent = String(downEvents);
-        ui.downRows.textContent = String(downRows);
-
-        const from = normalizeRow(limitRows[0]).timestamp || "-";
-        const to = normalizeRow(limitRows[limitRows.length - 1]).timestamp || "-";
-        ui.timelineCaption.textContent = `Track: ${trackName} | rows shown: ${total} | range: ${from} .. ${to}`;
-      }
-
-      async function fetchJSON(url, options = {}) {
-        const response = await fetch(url, {
-          credentials: "include",
-          headers: {
-            Accept: "application/json"
-          },
-          ...options
-        });
-        let data = null;
-        try {
-          data = await response.json();
-        } catch (_) {
-          data = null;
-        }
-        if (!response.ok) {
-          const reason = data && data.error ? data.error : `HTTP ${response.status}`;
-          const err = new Error(reason);
-          err.status = response.status;
-          throw err;
-        }
-        return data;
-      }
-
-      async function refreshSession() {
-        const session = await fetchJSON("/api/auth/session");
-        state.authorized = true;
-        ui.authGate.classList.add("hidden");
-        ui.sessionExpiry.textContent = formatClock(session.expires_at);
-      }
-
-      function formatClock(value) {
-        if (!value || value === "-") return "-";
+      function formatDateTime(value) {
         const date = new Date(value);
-        if (Number.isNaN(date.valueOf())) return value;
-        return date.toISOString().replace("T", " ").slice(0, 19);
+        if (Number.isNaN(date.valueOf())) return String(value);
+        return `${pad2(date.getDate())}.${pad2(date.getMonth() + 1)}.${date.getFullYear()} ${pad2(date.getHours())}:${pad2(date.getMinutes())}:${pad2(date.getSeconds())}`;
       }
 
-      function renderStatus(payload) {
-        state.tracks = payload.targets.map((item) => item.name);
-        ui.summaryTotal.textContent = String(payload.total);
-        ui.summaryUp.textContent = String(payload.up);
-        ui.summaryDown.textContent = String(payload.down);
-        ui.summaryUnknown.textContent = String(payload.unknown);
-        ui.snapshotTime.textContent = formatClock(payload.generated_at);
-        drawOverviewChart(payload);
-
-        ui.tableBody.innerHTML = "";
-        for (const target of payload.targets) {
-          const row = document.createElement("tr");
-          if (target.name === state.selectedTrack) {
-            row.classList.add("active");
-          }
-          row.dataset.track = target.name;
-          row.innerHTML = `
-            <td>${escapeHtml(target.name)}</td>
-            <td><code>${escapeHtml(target.address)}:${target.port}</code></td>
-            <td><span class="${badgeClass(target.status)}">${target.status}</span></td>
-            <td><code>${escapeHtml(target.last_changed)}</code></td>
-            <td><code>${escapeHtml(target.last_checked)}</code></td>
-          `;
-          row.addEventListener("click", () => {
-            state.selectedTrack = target.name;
-            syncTrackSelect();
-            renderStatus(payload);
-            void loadLogs();
-          });
-          ui.tableBody.appendChild(row);
-        }
-
-        syncTrackSelect();
+      function statusClass(status) {
+        if (status === "UP") return "status-pill status-up";
+        if (status === "DOWN") return "status-pill status-down";
+        return "status-pill status-unknown";
       }
 
-      function syncTrackSelect() {
-        const previous = state.selectedTrack;
-        const options = state.tracks;
-        if (!options.length) {
-          ui.trackSelect.innerHTML = "";
-          return;
-        }
-        if (!previous || !options.includes(previous)) {
-          state.selectedTrack = options[0];
-        }
-        ui.trackSelect.innerHTML = options
-          .map((name) => `<option value="${escapeAttr(name)}">${escapeHtml(name)}</option>`)
-          .join("");
-        ui.trackSelect.value = state.selectedTrack;
-      }
-
-      async function loadStatus() {
-        const payload = await fetchJSON("/api/status");
-        renderStatus(payload);
-        setStatusLine(`Status updated: ${new Date().toISOString().replace("T", " ").slice(0, 19)} UTC`);
-      }
-
-      async function loadLogs() {
-        if (!state.selectedTrack) {
-          ui.logsOutput.textContent = "(no tracks)";
-          ui.logsMeta.textContent = "No tracks available.";
-          drawTimelineChart([], "none");
-          return;
-        }
-        const days = Number(ui.daysInput.value) || 7;
-        const limit = Number(ui.limitInput.value) || 2000;
-        const query = new URLSearchParams({
-          track: state.selectedTrack,
-          days: String(days),
-          limit: String(limit)
-        });
-        const payload = await fetchJSON(`/api/logs?${query.toString()}`);
-        const rows = Array.isArray(payload.rows) ? payload.rows : [];
-        ui.logsMeta.textContent = `Track: ${payload.track} | rows: ${rows.length} | days: ${payload.days}`;
-        ui.logsOutput.textContent = payload.text || "(no rows)";
-        drawTimelineChart(rows, payload.track);
-      }
-
-      function clearTimers() {
-        if (state.refreshTimer !== null) {
-          clearInterval(state.refreshTimer);
-          state.refreshTimer = null;
-        }
-        if (state.logTimer !== null) {
-          clearInterval(state.logTimer);
-          state.logTimer = null;
-        }
-      }
-
-      async function logout() {
-        try {
-          await fetchJSON("/auth/logout", { method: "POST" });
-        } catch (_) {
-          // ignore server errors on logout
-        }
-        clearTimers();
-        state.authorized = false;
-        ui.authGate.classList.remove("hidden");
-        setStatusLine("Logged out.");
+      function setStatus(text) {
+        ui.statusLine.textContent = text;
       }
 
       function escapeHtml(value) {
@@ -846,96 +511,362 @@
           .replaceAll("'", "&#39;");
       }
 
-      function escapeAttr(value) {
-        return escapeHtml(value);
+      function normalizeRow(row) {
+        return {
+          timestamp: row.timestamp || row.Timestamp || "",
+          status: row.status || row.Status || "",
+          endpoint: row.endpoint || row.Endpoint || "",
+          reason: row.reason || row.Reason || ""
+        };
+      }
+
+      async function fetchJSON(url, options = {}) {
+        const response = await fetch(url, {
+          credentials: "include",
+          headers: {
+            Accept: "application/json",
+            ...options.headers
+          },
+          ...options
+        });
+        let data = null;
+        try {
+          data = await response.json();
+        } catch (_) {
+          data = null;
+        }
+        if (!response.ok) {
+          const message = data?.error || `HTTP ${response.status}`;
+          const error = new Error(message);
+          error.status = response.status;
+          throw error;
+        }
+        return data;
+      }
+
+      function applyTheme(theme) {
+        state.theme = theme === "light" ? "light" : "dark";
+        document.documentElement.setAttribute("data-theme", state.theme);
+        localStorage.setItem(THEME_KEY, state.theme);
+        ui.themeBtn.textContent = state.theme === "dark" ? "Theme: Dark" : "Theme: Light";
       }
 
       function resolveInitialTheme() {
         const stored = localStorage.getItem(THEME_KEY);
-        if (stored === "dark" || stored === "light") {
-          return stored;
-        }
-        if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
-          return "dark";
-        }
-        return "light";
+        if (stored === "dark" || stored === "light") return stored;
+        return "dark";
       }
 
-      function applyTheme(theme) {
-        state.theme = theme === "dark" ? "dark" : "light";
-        document.documentElement.setAttribute("data-theme", state.theme);
-        localStorage.setItem(THEME_KEY, state.theme);
-        ui.themeToggleBtn.textContent = state.theme === "dark" ? "Theme: Dark" : "Theme: Light";
+      async function refreshSession() {
+        const payload = await fetchJSON("/api/auth/session");
+        ui.sessionExpiry.textContent = formatDateTime(payload.expires_at);
+        return payload;
       }
 
-      function toggleTheme() {
-        const next = state.theme === "dark" ? "light" : "dark";
-        applyTheme(next);
+      async function tryMiniAppAutoAuth() {
+        const tg = window.Telegram?.WebApp;
+        if (!tg || !tg.initData) return false;
+        tg.ready?.();
+        tg.expand?.();
+        await fetchJSON("/api/auth/telegram-miniapp", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            init_data: tg.initData
+          })
+        });
+        return true;
+      }
+
+      async function ensureAuthorized() {
+        try {
+          await refreshSession();
+          ui.authGate.classList.add("hidden");
+          return true;
+        } catch (_) {
+          try {
+            const miniAppOk = await tryMiniAppAutoAuth();
+            if (miniAppOk) {
+              await refreshSession();
+              ui.authGate.classList.add("hidden");
+              return true;
+            }
+          } catch (_) {
+            // no-op
+          }
+          ui.authGate.classList.remove("hidden");
+          return false;
+        }
+      }
+
+      function renderDistributionChart(snapshot) {
+        const data = [
+          { value: snapshot.up, name: "UP", itemStyle: { color: "#5cd89a" } },
+          { value: snapshot.down, name: "DOWN", itemStyle: { color: "#ff6f8f" } },
+          { value: snapshot.unknown, name: "UNKNOWN", itemStyle: { color: "#ffc36d" } }
+        ];
+        ui.distributionChart.setOption({
+          backgroundColor: "transparent",
+          tooltip: {
+            trigger: "item"
+          },
+          legend: {
+            bottom: 0,
+            textStyle: {
+              color: getComputedStyle(document.documentElement).getPropertyValue("--muted").trim()
+            }
+          },
+          series: [
+            {
+              type: "pie",
+              radius: ["42%", "70%"],
+              center: ["50%", "46%"],
+              label: { color: getComputedStyle(document.documentElement).getPropertyValue("--ink").trim() },
+              data
+            }
+          ]
+        });
+      }
+
+      function renderTimelineChart(rows) {
+        const seriesData = rows.map((raw) => {
+          const row = normalizeRow(raw);
+          const value = row.status === "DOWN" ? 0 : row.status === "UP" ? 1 : null;
+          return [row.timestamp, value];
+        }).filter((item) => item[1] !== null);
+
+        ui.timelineChart.setOption({
+          backgroundColor: "transparent",
+          tooltip: {
+            trigger: "axis",
+            axisPointer: { type: "line" },
+            formatter: (params) => {
+              if (!params || !params.length) return "";
+              const first = params[0];
+              const ts = formatDateTime(first.axisValue);
+              const stateLabel = Number(first.data[1]) === 1 ? "UP" : "DOWN";
+              return `${ts}<br/><b>${stateLabel}</b>`;
+            }
+          },
+          grid: {
+            left: 46,
+            right: 18,
+            top: 18,
+            bottom: 56
+          },
+          xAxis: {
+            type: "time",
+            axisLabel: {
+              color: getComputedStyle(document.documentElement).getPropertyValue("--muted").trim(),
+              formatter: (value) => {
+                const date = new Date(value);
+                return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+              }
+            },
+            axisLine: { lineStyle: { color: getComputedStyle(document.documentElement).getPropertyValue("--line").trim() } },
+            splitLine: { show: false }
+          },
+          yAxis: {
+            type: "value",
+            min: 0,
+            max: 1,
+            interval: 1,
+            axisLabel: {
+              color: getComputedStyle(document.documentElement).getPropertyValue("--muted").trim(),
+              formatter: (value) => (value === 1 ? "UP" : "DOWN")
+            },
+            axisLine: { show: false },
+            splitLine: { lineStyle: { color: getComputedStyle(document.documentElement).getPropertyValue("--line").trim() } }
+          },
+          dataZoom: [
+            {
+              type: "inside",
+              xAxisIndex: 0
+            },
+            {
+              type: "slider",
+              xAxisIndex: 0,
+              height: 18,
+              bottom: 12,
+              borderColor: getComputedStyle(document.documentElement).getPropertyValue("--line").trim(),
+              backgroundColor: "transparent",
+              fillerColor: "rgba(101,184,255,0.18)"
+            }
+          ],
+          series: [
+            {
+              name: "State",
+              type: "line",
+              step: "end",
+              smooth: false,
+              showSymbol: false,
+              lineStyle: { width: 2, color: "#65b8ff" },
+              areaStyle: { color: "rgba(101,184,255,0.18)" },
+              data: seriesData
+            }
+          ]
+        });
+      }
+
+      function renderTargetsTable(payload) {
+        ui.statusTableBody.innerHTML = "";
+        for (const target of payload.targets) {
+          const row = document.createElement("tr");
+          if (target.name === state.selectedTrack) row.classList.add("active");
+          row.innerHTML = `
+            <td>${escapeHtml(target.name)}</td>
+            <td><code>${escapeHtml(target.address)}:${target.port}</code></td>
+            <td><span class="${statusClass(target.status)}">${target.status}</span></td>
+            <td><code>${escapeHtml(formatDateTime(target.last_changed))}</code></td>
+            <td><code>${escapeHtml(formatDateTime(target.last_checked))}</code></td>
+          `;
+          row.addEventListener("click", () => {
+            state.selectedTrack = target.name;
+            syncTrackSelect();
+            renderTargetsTable(payload);
+            void loadLogs();
+          });
+          ui.statusTableBody.appendChild(row);
+        }
+      }
+
+      function syncTrackSelect() {
+        if (!state.tracks.length) {
+          ui.trackSelect.innerHTML = "";
+          return;
+        }
+        if (!state.selectedTrack || !state.tracks.includes(state.selectedTrack)) {
+          state.selectedTrack = state.tracks[0];
+        }
+        ui.trackSelect.innerHTML = state.tracks
+          .map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`)
+          .join("");
+        ui.trackSelect.value = state.selectedTrack;
+      }
+
+      async function loadStatus() {
+        const payload = await fetchJSON("/api/status");
+        ui.summaryTotal.textContent = String(payload.total);
+        ui.summaryUp.textContent = String(payload.up);
+        ui.summaryDown.textContent = String(payload.down);
+        ui.summaryUnknown.textContent = String(payload.unknown);
+        ui.snapshotTime.textContent = formatDateTime(payload.generated_at);
+        state.tracks = payload.targets.map((target) => target.name);
+        syncTrackSelect();
+        renderTargetsTable(payload);
+        renderDistributionChart(payload);
+        setStatus(`Status updated ${formatDateTime(new Date().toISOString())}`);
+      }
+
+      function buildLogText(rows) {
+        if (!rows.length) return "(no rows)";
+        return rows
+          .map((raw) => {
+            const row = normalizeRow(raw);
+            return `${formatDateTime(row.timestamp)}  ${row.status}  ${row.endpoint}  ${row.reason}`;
+          })
+          .join("\n");
+      }
+
+      async function loadLogs() {
+        if (!state.selectedTrack) {
+          ui.logsMeta.textContent = "No track selected.";
+          ui.logsOutput.textContent = "(no track)";
+          renderTimelineChart([]);
+          return;
+        }
+        const hours = Number(ui.rangeSelect.value) || 24;
+        const limit = Number(ui.limitInput.value) || 10000;
+        const tzOffset = -new Date().getTimezoneOffset();
+        const query = new URLSearchParams({
+          track: state.selectedTrack,
+          hours: String(hours),
+          limit: String(limit),
+          tz_offset_minutes: String(tzOffset)
+        });
+        const payload = await fetchJSON(`/api/logs?${query.toString()}`);
+        const rows = Array.isArray(payload.rows) ? payload.rows : [];
+        state.rows = rows;
+        ui.logsMeta.textContent = `Track: ${payload.track} | Range: ${hours}h | Rows: ${rows.length}`;
+        ui.logsOutput.textContent = buildLogText(rows);
+        renderTimelineChart(rows);
+      }
+
+      function clearTimers() {
+        if (state.refreshTimer) clearInterval(state.refreshTimer);
+        if (state.logTimer) clearInterval(state.logTimer);
+        state.refreshTimer = null;
+        state.logTimer = null;
+      }
+
+      async function logout() {
+        try {
+          await fetchJSON("/auth/logout", { method: "POST" });
+        } catch (_) {
+          // noop
+        }
+        clearTimers();
+        ui.authGate.classList.remove("hidden");
+        setStatus("Logged out");
       }
 
       async function bootstrap() {
         applyTheme(resolveInitialTheme());
-        try {
-          await refreshSession();
-          await loadStatus();
-          await loadLogs();
-        } catch (error) {
-          state.authorized = false;
-          ui.authGate.classList.remove("hidden");
-          clearTimers();
-          setStatusLine(`Authorization required: ${error.message}`);
+        const ok = await ensureAuthorized();
+        if (!ok) {
+          setStatus("Authorization required");
           return;
         }
+        await loadStatus();
+        await loadLogs();
 
         clearTimers();
         state.refreshTimer = setInterval(() => {
-          void loadStatus().catch((error) => {
-            clearTimers();
-            ui.authGate.classList.remove("hidden");
-            setStatusLine(`Session lost: ${error.message}`);
-          });
+          void loadStatus().catch((error) => setStatus(`Status error: ${error.message}`));
         }, 5000);
-
         state.logTimer = setInterval(() => {
-          void loadLogs().catch((error) => {
-            setStatusLine(`Log refresh error: ${error.message}`);
-          });
+          void loadLogs().catch((error) => setStatus(`Log error: ${error.message}`));
         }, 10000);
       }
 
-      ui.refreshStatusBtn.addEventListener("click", () => {
-        void loadStatus().catch((error) => {
-          setStatusLine(`Status refresh failed: ${error.message}`);
-        });
+      ui.refreshBtn.addEventListener("click", () => {
+        void loadStatus().then(() => loadLogs()).catch((error) => setStatus(`Refresh error: ${error.message}`));
       });
 
-      ui.refreshLogsBtn.addEventListener("click", () => {
+      ui.logsBtn.addEventListener("click", () => {
         state.selectedTrack = ui.trackSelect.value;
-        void loadLogs().catch((error) => {
-          setStatusLine(`Log load failed: ${error.message}`);
-        });
+        void loadLogs().catch((error) => setStatus(`Load logs error: ${error.message}`));
+      });
+
+      ui.rangeSelect.addEventListener("change", () => {
+        void loadLogs().catch((error) => setStatus(`Range update error: ${error.message}`));
       });
 
       ui.trackSelect.addEventListener("change", () => {
         state.selectedTrack = ui.trackSelect.value;
-        void loadLogs().catch((error) => {
-          setStatusLine(`Log load failed: ${error.message}`);
-        });
+        void loadLogs().catch((error) => setStatus(`Track update error: ${error.message}`));
       });
 
       ui.logoutBtn.addEventListener("click", () => {
         void logout();
       });
 
-      ui.themeToggleBtn.addEventListener("click", () => {
-        toggleTheme();
-        void loadStatus().catch(() => {});
-        void loadLogs().catch(() => {});
+      ui.themeBtn.addEventListener("click", () => {
+        applyTheme(state.theme === "dark" ? "light" : "dark");
+        renderDistributionChart({
+          total: Number(ui.summaryTotal.textContent),
+          up: Number(ui.summaryUp.textContent),
+          down: Number(ui.summaryDown.textContent),
+          unknown: Number(ui.summaryUnknown.textContent)
+        });
+        renderTimelineChart(state.rows);
       });
 
       window.addEventListener("resize", () => {
-        void loadStatus().catch(() => {});
-        void loadLogs().catch(() => {});
+        ui.timelineChart.resize();
+        ui.distributionChart.resize();
       });
 
       void bootstrap();

@@ -1,334 +1,58 @@
-<!DOCTYPE html><html lang="en" data-astro-cid-j7pv25f6> <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Trackway Dashboard</title><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Chivo:wght@400;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet"><link rel="stylesheet" href="/_astro/index.D491bXxx.css"></head> <body data-astro-cid-j7pv25f6> <main class="dashboard" data-astro-cid-j7pv25f6> <section class="hero" data-astro-cid-j7pv25f6> <div class="hero-top" data-astro-cid-j7pv25f6> <div data-astro-cid-j7pv25f6> <h1 data-astro-cid-j7pv25f6>Trackway Dashboard</h1> <p class="subtitle" data-astro-cid-j7pv25f6>TCP statuses, downtime timeline and full track logs.</p> </div> <div class="actions" data-astro-cid-j7pv25f6> <button id="theme-toggle-btn" class="btn-ghost" type="button" data-astro-cid-j7pv25f6>Theme</button> <button id="refresh-status-btn" class="btn-primary" type="button" data-astro-cid-j7pv25f6>Refresh</button> <button id="logout-btn" class="btn-danger" type="button" data-astro-cid-j7pv25f6>Logout</button> </div> </div> <div class="meta" data-astro-cid-j7pv25f6> <span class="chip" data-astro-cid-j7pv25f6>Total <strong id="summary-total" data-astro-cid-j7pv25f6>0</strong></span> <span class="chip" data-astro-cid-j7pv25f6>UP <strong id="summary-up" data-astro-cid-j7pv25f6>0</strong></span> <span class="chip" data-astro-cid-j7pv25f6>DOWN <strong id="summary-down" data-astro-cid-j7pv25f6>0</strong></span> <span class="chip" data-astro-cid-j7pv25f6>UNKNOWN <strong id="summary-unknown" data-astro-cid-j7pv25f6>0</strong></span> <span class="chip" data-astro-cid-j7pv25f6>Session expires <strong id="session-expiry" data-astro-cid-j7pv25f6>-</strong></span> <span class="chip" data-astro-cid-j7pv25f6>Snapshot <strong id="snapshot-time" data-astro-cid-j7pv25f6>-</strong></span> </div> </section> <section class="panel" data-astro-cid-j7pv25f6> <h2 data-astro-cid-j7pv25f6>Charts</h2> <div class="charts-grid" data-astro-cid-j7pv25f6> <article class="chart-card" data-astro-cid-j7pv25f6> <h3 data-astro-cid-j7pv25f6>Current Snapshot (all tracks)</h3> <canvas id="overview-chart" width="960" height="160" data-astro-cid-j7pv25f6></canvas> <p id="overview-caption" class="chart-caption" data-astro-cid-j7pv25f6>No data</p> </article> <article class="chart-card" data-astro-cid-j7pv25f6> <h3 data-astro-cid-j7pv25f6>Track Timeline (from logs)</h3> <canvas id="timeline-chart" width="960" height="160" data-astro-cid-j7pv25f6></canvas> <div class="chart-metrics" data-astro-cid-j7pv25f6> <span class="metric-chip" data-astro-cid-j7pv25f6>Availability <strong id="availability-rate" data-astro-cid-j7pv25f6>-</strong></span> <span class="metric-chip" data-astro-cid-j7pv25f6>Down events <strong id="down-events" data-astro-cid-j7pv25f6>-</strong></span> <span class="metric-chip" data-astro-cid-j7pv25f6>Down rows <strong id="down-rows" data-astro-cid-j7pv25f6>-</strong></span> </div> <p id="timeline-caption" class="chart-caption" data-astro-cid-j7pv25f6>Choose track to draw timeline</p> </article> </div> </section> <section class="panel" data-astro-cid-j7pv25f6> <h2 data-astro-cid-j7pv25f6>Targets</h2> <div class="table-wrap" data-astro-cid-j7pv25f6> <table data-astro-cid-j7pv25f6> <thead data-astro-cid-j7pv25f6> <tr data-astro-cid-j7pv25f6> <th data-astro-cid-j7pv25f6>Name</th> <th data-astro-cid-j7pv25f6>Endpoint</th> <th data-astro-cid-j7pv25f6>Status</th> <th data-astro-cid-j7pv25f6>Last Changed (UTC)</th> <th data-astro-cid-j7pv25f6>Last Checked (UTC)</th> </tr> </thead> <tbody id="status-table-body" data-astro-cid-j7pv25f6></tbody> </table> </div> </section> <section class="panel" data-astro-cid-j7pv25f6> <h2 data-astro-cid-j7pv25f6>Logs</h2> <div class="logs-controls" data-astro-cid-j7pv25f6> <div class="field" data-astro-cid-j7pv25f6> <label for="track-select" data-astro-cid-j7pv25f6>Track</label> <select id="track-select" data-astro-cid-j7pv25f6></select> </div> <div class="field" data-astro-cid-j7pv25f6> <label for="days-input" data-astro-cid-j7pv25f6>Days</label> <input id="days-input" type="number" min="1" max="365" value="7" data-astro-cid-j7pv25f6> </div> <div class="field" data-astro-cid-j7pv25f6> <label for="limit-input" data-astro-cid-j7pv25f6>Rows</label> <input id="limit-input" type="number" min="1" max="5000" value="2000" data-astro-cid-j7pv25f6> </div> <button id="refresh-logs-btn" class="btn-ghost" type="button" data-astro-cid-j7pv25f6>Load Logs</button> </div> <p id="logs-meta" class="logs-meta" data-astro-cid-j7pv25f6>No logs loaded.</p> <pre id="logs-output" data-astro-cid-j7pv25f6>(no data)</pre> </section> <p id="status-line" class="status-line" data-astro-cid-j7pv25f6></p> </main> <div id="auth-gate" class="auth-gate hidden" data-astro-cid-j7pv25f6> <div class="auth-card" data-astro-cid-j7pv25f6> <h3 data-astro-cid-j7pv25f6>Dashboard authorization required</h3> <p data-astro-cid-j7pv25f6>Open Telegram and send <code data-astro-cid-j7pv25f6>/authme</code> to your bot.</p> <p data-astro-cid-j7pv25f6>Use the link from the bot message to authorize this browser.</p> <p data-astro-cid-j7pv25f6>Session is valid until browser restart or 24 hours.</p> </div> </div> <script type="module">
+<!DOCTYPE html><html lang="en" data-astro-cid-j7pv25f6> <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Trackway Observability</title><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet"><link rel="stylesheet" href="/_astro/index.DTVtQfj2.css"></head> <body data-astro-cid-j7pv25f6> <main data-astro-cid-j7pv25f6> <section class="panel header" data-astro-cid-j7pv25f6> <div class="header-row" data-astro-cid-j7pv25f6> <div data-astro-cid-j7pv25f6> <h1 data-astro-cid-j7pv25f6>Trackway Observability Dashboard</h1> <p class="subtitle" data-astro-cid-j7pv25f6>Time-series availability, failure trend, and full transport logs.</p> </div> <div class="actions" data-astro-cid-j7pv25f6> <select id="range-select" data-astro-cid-j7pv25f6> <option value="1" data-astro-cid-j7pv25f6>1h</option> <option value="3" data-astro-cid-j7pv25f6>3h</option> <option value="6" data-astro-cid-j7pv25f6>6h</option> <option value="12" data-astro-cid-j7pv25f6>12h</option> <option value="24" selected data-astro-cid-j7pv25f6>24h</option> <option value="48" data-astro-cid-j7pv25f6>48h</option> </select> <button id="theme-btn" type="button" data-astro-cid-j7pv25f6>Theme</button> <button id="refresh-btn" class="btn-primary" type="button" data-astro-cid-j7pv25f6>Refresh</button> <button id="logout-btn" class="btn-danger" type="button" data-astro-cid-j7pv25f6>Logout</button> </div> </div> <div class="chips" data-astro-cid-j7pv25f6> <span class="chip" data-astro-cid-j7pv25f6>Total <strong id="summary-total" data-astro-cid-j7pv25f6>0</strong></span> <span class="chip" data-astro-cid-j7pv25f6>UP <strong id="summary-up" data-astro-cid-j7pv25f6>0</strong></span> <span class="chip" data-astro-cid-j7pv25f6>DOWN <strong id="summary-down" data-astro-cid-j7pv25f6>0</strong></span> <span class="chip" data-astro-cid-j7pv25f6>UNKNOWN <strong id="summary-unknown" data-astro-cid-j7pv25f6>0</strong></span> <span class="chip" data-astro-cid-j7pv25f6>Session <strong id="session-expiry" data-astro-cid-j7pv25f6>-</strong></span> <span class="chip" data-astro-cid-j7pv25f6>Snapshot <strong id="snapshot-time" data-astro-cid-j7pv25f6>-</strong></span> </div> </section> <section class="content-grid" data-astro-cid-j7pv25f6> <article class="panel chart-panel" data-astro-cid-j7pv25f6> <p class="panel-title" data-astro-cid-j7pv25f6>Availability Timeline (hover for precise time)</p> <div id="timeline-chart" class="chart" data-astro-cid-j7pv25f6></div> </article> <article class="panel chart-panel" data-astro-cid-j7pv25f6> <p class="panel-title" data-astro-cid-j7pv25f6>Current State Distribution</p> <div id="distribution-chart" class="chart short-chart" data-astro-cid-j7pv25f6></div> </article> </section> <section class="panel table-panel" data-astro-cid-j7pv25f6> <p class="panel-title" data-astro-cid-j7pv25f6>Targets</p> <div class="table-wrap" data-astro-cid-j7pv25f6> <table data-astro-cid-j7pv25f6> <thead data-astro-cid-j7pv25f6> <tr data-astro-cid-j7pv25f6> <th data-astro-cid-j7pv25f6>Name</th> <th data-astro-cid-j7pv25f6>Endpoint</th> <th data-astro-cid-j7pv25f6>Status</th> <th data-astro-cid-j7pv25f6>Last Changed</th> <th data-astro-cid-j7pv25f6>Last Checked</th> </tr> </thead> <tbody id="status-table-body" data-astro-cid-j7pv25f6></tbody> </table> </div> </section> <section class="panel logs-panel" data-astro-cid-j7pv25f6> <div class="logs-top" data-astro-cid-j7pv25f6> <p class="panel-title" style="margin: 0;" data-astro-cid-j7pv25f6>Logs</p> <div class="controls" data-astro-cid-j7pv25f6> <select id="track-select" data-astro-cid-j7pv25f6></select> <input id="limit-input" type="number" min="200" max="100000" step="100" value="10000" data-astro-cid-j7pv25f6> <button id="logs-btn" type="button" data-astro-cid-j7pv25f6>Load Logs</button> </div> </div> <p id="logs-meta" class="status-line" data-astro-cid-j7pv25f6>No logs loaded.</p> <pre id="logs-output" data-astro-cid-j7pv25f6>(no data)</pre> </section> <p id="status-line" class="status-line" data-astro-cid-j7pv25f6></p> </main> <div id="auth-gate" class="auth-gate hidden" data-astro-cid-j7pv25f6> <div class="auth-card" data-astro-cid-j7pv25f6> <h3 data-astro-cid-j7pv25f6>Authorization required</h3> <p data-astro-cid-j7pv25f6>Send <code data-astro-cid-j7pv25f6>/authme</code> to your Telegram bot and open the link.</p> <p data-astro-cid-j7pv25f6>If opened inside Telegram Mini App, authorization is attempted automatically.</p> <p data-astro-cid-j7pv25f6>Session remains valid until browser restart or 24 hours.</p> </div> </div> <script type="module">
+      import * as echarts from "echarts";
+
       const ui = {
-        tableBody: document.getElementById("status-table-body"),
+        statusTableBody: document.getElementById("status-table-body"),
+        rangeSelect: document.getElementById("range-select"),
         trackSelect: document.getElementById("track-select"),
-        daysInput: document.getElementById("days-input"),
         limitInput: document.getElementById("limit-input"),
         logsOutput: document.getElementById("logs-output"),
         logsMeta: document.getElementById("logs-meta"),
         statusLine: document.getElementById("status-line"),
         authGate: document.getElementById("auth-gate"),
-        refreshStatusBtn: document.getElementById("refresh-status-btn"),
-        refreshLogsBtn: document.getElementById("refresh-logs-btn"),
+        refreshBtn: document.getElementById("refresh-btn"),
+        logsBtn: document.getElementById("logs-btn"),
         logoutBtn: document.getElementById("logout-btn"),
-        themeToggleBtn: document.getElementById("theme-toggle-btn"),
+        themeBtn: document.getElementById("theme-btn"),
         summaryTotal: document.getElementById("summary-total"),
         summaryUp: document.getElementById("summary-up"),
         summaryDown: document.getElementById("summary-down"),
         summaryUnknown: document.getElementById("summary-unknown"),
         sessionExpiry: document.getElementById("session-expiry"),
         snapshotTime: document.getElementById("snapshot-time"),
-        overviewChart: document.getElementById("overview-chart"),
-        timelineChart: document.getElementById("timeline-chart"),
-        overviewCaption: document.getElementById("overview-caption"),
-        timelineCaption: document.getElementById("timeline-caption"),
-        availabilityRate: document.getElementById("availability-rate"),
-        downEvents: document.getElementById("down-events"),
-        downRows: document.getElementById("down-rows")
+        timelineChart: echarts.init(document.getElementById("timeline-chart")),
+        distributionChart: echarts.init(document.getElementById("distribution-chart"))
       };
 
       const state = {
-        authorized: false,
         selectedTrack: "",
+        tracks: [],
         refreshTimer: null,
         logTimer: null,
-        tracks: [],
-        theme: "light"
+        theme: "dark",
+        rows: []
       };
 
-      const THEME_KEY = "trackway_theme";
+      const THEME_KEY = "trackway_theme_v2";
 
-      function setStatusLine(text) {
-        ui.statusLine.textContent = text;
+      function pad2(value) {
+        return String(value).padStart(2, "0");
       }
 
-      function badgeClass(status) {
-        if (status === "UP") return "badge badge-up";
-        if (status === "DOWN") return "badge badge-down";
-        return "badge badge-unknown";
-      }
-
-      function pickCSSColor(name, fallback) {
-        const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-        return value || fallback;
-      }
-
-      function resizeCanvas(canvas) {
-        const dpr = window.devicePixelRatio || 1;
-        const rect = canvas.getBoundingClientRect();
-        const targetWidth = Math.max(10, Math.floor(rect.width * dpr));
-        const targetHeight = Math.max(10, Math.floor(rect.height * dpr));
-        if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
-          canvas.width = targetWidth;
-          canvas.height = targetHeight;
-        }
-      }
-
-      function drawOverviewChart(payload) {
-        const canvas = ui.overviewChart;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) return;
-        resizeCanvas(canvas);
-        const width = canvas.width;
-        const height = canvas.height;
-        ctx.clearRect(0, 0, width, height);
-
-        const values = [
-          { label: "UP", value: payload.up, color: pickCSSColor("--up", "#0f8c4a") },
-          { label: "DOWN", value: payload.down, color: pickCSSColor("--down", "#d1372f") },
-          { label: "UNKNOWN", value: payload.unknown, color: pickCSSColor("--unknown", "#7d6f3c") }
-        ];
-        const maxValue = Math.max(1, ...values.map((item) => item.value));
-        const baseY = Math.floor(height * 0.82);
-        const chartHeight = Math.floor(height * 0.62);
-        const gap = Math.floor(width * 0.05);
-        const barWidth = Math.floor((width - gap * 4) / 3);
-
-        const gridColor = pickCSSColor("--chart-grid", "#d9e6e1");
-        ctx.strokeStyle = gridColor;
-        ctx.lineWidth = 1;
-        for (let i = 0; i <= 4; i++) {
-          const y = Math.floor(baseY - (chartHeight / 4) * i);
-          ctx.beginPath();
-          ctx.moveTo(gap, y);
-          ctx.lineTo(width - gap, y);
-          ctx.stroke();
-        }
-
-        ctx.font = `${Math.floor(height * 0.085)}px Chivo, sans-serif`;
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-
-        values.forEach((item, index) => {
-          const left = gap + gap * index + barWidth * index;
-          const barHeight = Math.floor((item.value / maxValue) * chartHeight);
-          const top = baseY - barHeight;
-
-          ctx.fillStyle = item.color;
-          ctx.fillRect(left, top, barWidth, barHeight);
-
-          ctx.fillStyle = pickCSSColor("--ink", "#10242c");
-          ctx.fillText(`${item.value}`, left + barWidth / 2, top - Math.floor(height * 0.06));
-          ctx.fillText(item.label, left + barWidth / 2, baseY + Math.floor(height * 0.09));
-        });
-
-        const downPercent = payload.total > 0 ? ((payload.down / payload.total) * 100).toFixed(1) : "0.0";
-        ui.overviewCaption.textContent = `Tracks: ${payload.total} | down ratio: ${downPercent}%`;
-      }
-
-      function normalizeRow(row) {
-        return {
-          timestamp: row.timestamp || row.Timestamp || "",
-          status: row.status || row.Status || "",
-          endpoint: row.endpoint || row.Endpoint || "",
-          reason: row.reason || row.Reason || ""
-        };
-      }
-
-      function drawTimelineChart(rows, trackName) {
-        const canvas = ui.timelineChart;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) return;
-        resizeCanvas(canvas);
-        const width = canvas.width;
-        const height = canvas.height;
-        ctx.clearRect(0, 0, width, height);
-
-        if (!rows.length) {
-          ui.timelineCaption.textContent = `Track: ${trackName} | no rows`;
-          ui.availabilityRate.textContent = "-";
-          ui.downEvents.textContent = "-";
-          ui.downRows.textContent = "-";
-          return;
-        }
-
-        const limitRows = rows.slice(Math.max(0, rows.length - 280));
-        const total = limitRows.length;
-        let upRows = 0;
-        let downRows = 0;
-        let downEvents = 0;
-        let prevStatus = "";
-
-        const upColor = pickCSSColor("--up", "#0f8c4a");
-        const downColor = pickCSSColor("--down", "#d1372f");
-        const unknownColor = pickCSSColor("--unknown", "#7d6f3c");
-        const gridColor = pickCSSColor("--chart-grid", "#d9e6e1");
-
-        ctx.fillStyle = gridColor;
-        ctx.fillRect(0, Math.floor(height * 0.52), width, 1);
-
-        const barGap = 1;
-        const fullBarWidth = Math.max(2, Math.floor(width / total));
-        const barWidth = Math.max(1, fullBarWidth - barGap);
-
-        limitRows.forEach((raw, index) => {
-          const row = normalizeRow(raw);
-          let color = unknownColor;
-          if (row.status === "UP") {
-            color = upColor;
-            upRows++;
-          } else if (row.status === "DOWN") {
-            color = downColor;
-            downRows++;
-            if (prevStatus !== "DOWN") {
-              downEvents++;
-            }
-          }
-          prevStatus = row.status;
-
-          const x = Math.floor(index * fullBarWidth);
-          const top = row.status === "DOWN" ? Math.floor(height * 0.52) : Math.floor(height * 0.22);
-          const h = row.status === "DOWN" ? Math.floor(height * 0.33) : Math.floor(height * 0.3);
-          ctx.fillStyle = color;
-          ctx.fillRect(x, top, barWidth, h);
-        });
-
-        const availability = total > 0 ? ((upRows / total) * 100).toFixed(2) : "0.00";
-        ui.availabilityRate.textContent = `${availability}%`;
-        ui.downEvents.textContent = String(downEvents);
-        ui.downRows.textContent = String(downRows);
-
-        const from = normalizeRow(limitRows[0]).timestamp || "-";
-        const to = normalizeRow(limitRows[limitRows.length - 1]).timestamp || "-";
-        ui.timelineCaption.textContent = `Track: ${trackName} | rows shown: ${total} | range: ${from} .. ${to}`;
-      }
-
-      async function fetchJSON(url, options = {}) {
-        const response = await fetch(url, {
-          credentials: "include",
-          headers: {
-            Accept: "application/json"
-          },
-          ...options
-        });
-        let data = null;
-        try {
-          data = await response.json();
-        } catch (_) {
-          data = null;
-        }
-        if (!response.ok) {
-          const reason = data && data.error ? data.error : `HTTP ${response.status}`;
-          const err = new Error(reason);
-          err.status = response.status;
-          throw err;
-        }
-        return data;
-      }
-
-      async function refreshSession() {
-        const session = await fetchJSON("/api/auth/session");
-        state.authorized = true;
-        ui.authGate.classList.add("hidden");
-        ui.sessionExpiry.textContent = formatClock(session.expires_at);
-      }
-
-      function formatClock(value) {
-        if (!value || value === "-") return "-";
+      function formatDateTime(value) {
         const date = new Date(value);
-        if (Number.isNaN(date.valueOf())) return value;
-        return date.toISOString().replace("T", " ").slice(0, 19);
+        if (Number.isNaN(date.valueOf())) return String(value);
+        return `${pad2(date.getDate())}.${pad2(date.getMonth() + 1)}.${date.getFullYear()} ${pad2(date.getHours())}:${pad2(date.getMinutes())}:${pad2(date.getSeconds())}`;
       }
 
-      function renderStatus(payload) {
-        state.tracks = payload.targets.map((item) => item.name);
-        ui.summaryTotal.textContent = String(payload.total);
-        ui.summaryUp.textContent = String(payload.up);
-        ui.summaryDown.textContent = String(payload.down);
-        ui.summaryUnknown.textContent = String(payload.unknown);
-        ui.snapshotTime.textContent = formatClock(payload.generated_at);
-        drawOverviewChart(payload);
-
-        ui.tableBody.innerHTML = "";
-        for (const target of payload.targets) {
-          const row = document.createElement("tr");
-          if (target.name === state.selectedTrack) {
-            row.classList.add("active");
-          }
-          row.dataset.track = target.name;
-          row.innerHTML = `
-            <td>${escapeHtml(target.name)}</td>
-            <td><code>${escapeHtml(target.address)}:${target.port}</code></td>
-            <td><span class="${badgeClass(target.status)}">${target.status}</span></td>
-            <td><code>${escapeHtml(target.last_changed)}</code></td>
-            <td><code>${escapeHtml(target.last_checked)}</code></td>
-          `;
-          row.addEventListener("click", () => {
-            state.selectedTrack = target.name;
-            syncTrackSelect();
-            renderStatus(payload);
-            void loadLogs();
-          });
-          ui.tableBody.appendChild(row);
-        }
-
-        syncTrackSelect();
+      function statusClass(status) {
+        if (status === "UP") return "status-pill status-up";
+        if (status === "DOWN") return "status-pill status-down";
+        return "status-pill status-unknown";
       }
 
-      function syncTrackSelect() {
-        const previous = state.selectedTrack;
-        const options = state.tracks;
-        if (!options.length) {
-          ui.trackSelect.innerHTML = "";
-          return;
-        }
-        if (!previous || !options.includes(previous)) {
-          state.selectedTrack = options[0];
-        }
-        ui.trackSelect.innerHTML = options
-          .map((name) => `<option value="${escapeAttr(name)}">${escapeHtml(name)}</option>`)
-          .join("");
-        ui.trackSelect.value = state.selectedTrack;
-      }
-
-      async function loadStatus() {
-        const payload = await fetchJSON("/api/status");
-        renderStatus(payload);
-        setStatusLine(`Status updated: ${new Date().toISOString().replace("T", " ").slice(0, 19)} UTC`);
-      }
-
-      async function loadLogs() {
-        if (!state.selectedTrack) {
-          ui.logsOutput.textContent = "(no tracks)";
-          ui.logsMeta.textContent = "No tracks available.";
-          drawTimelineChart([], "none");
-          return;
-        }
-        const days = Number(ui.daysInput.value) || 7;
-        const limit = Number(ui.limitInput.value) || 2000;
-        const query = new URLSearchParams({
-          track: state.selectedTrack,
-          days: String(days),
-          limit: String(limit)
-        });
-        const payload = await fetchJSON(`/api/logs?${query.toString()}`);
-        const rows = Array.isArray(payload.rows) ? payload.rows : [];
-        ui.logsMeta.textContent = `Track: ${payload.track} | rows: ${rows.length} | days: ${payload.days}`;
-        ui.logsOutput.textContent = payload.text || "(no rows)";
-        drawTimelineChart(rows, payload.track);
-      }
-
-      function clearTimers() {
-        if (state.refreshTimer !== null) {
-          clearInterval(state.refreshTimer);
-          state.refreshTimer = null;
-        }
-        if (state.logTimer !== null) {
-          clearInterval(state.logTimer);
-          state.logTimer = null;
-        }
-      }
-
-      async function logout() {
-        try {
-          await fetchJSON("/auth/logout", { method: "POST" });
-        } catch (_) {
-          // ignore server errors on logout
-        }
-        clearTimers();
-        state.authorized = false;
-        ui.authGate.classList.remove("hidden");
-        setStatusLine("Logged out.");
+      function setStatus(text) {
+        ui.statusLine.textContent = text;
       }
 
       function escapeHtml(value) {
@@ -340,96 +64,362 @@
           .replaceAll("'", "&#39;");
       }
 
-      function escapeAttr(value) {
-        return escapeHtml(value);
+      function normalizeRow(row) {
+        return {
+          timestamp: row.timestamp || row.Timestamp || "",
+          status: row.status || row.Status || "",
+          endpoint: row.endpoint || row.Endpoint || "",
+          reason: row.reason || row.Reason || ""
+        };
+      }
+
+      async function fetchJSON(url, options = {}) {
+        const response = await fetch(url, {
+          credentials: "include",
+          headers: {
+            Accept: "application/json",
+            ...options.headers
+          },
+          ...options
+        });
+        let data = null;
+        try {
+          data = await response.json();
+        } catch (_) {
+          data = null;
+        }
+        if (!response.ok) {
+          const message = data?.error || `HTTP ${response.status}`;
+          const error = new Error(message);
+          error.status = response.status;
+          throw error;
+        }
+        return data;
+      }
+
+      function applyTheme(theme) {
+        state.theme = theme === "light" ? "light" : "dark";
+        document.documentElement.setAttribute("data-theme", state.theme);
+        localStorage.setItem(THEME_KEY, state.theme);
+        ui.themeBtn.textContent = state.theme === "dark" ? "Theme: Dark" : "Theme: Light";
       }
 
       function resolveInitialTheme() {
         const stored = localStorage.getItem(THEME_KEY);
-        if (stored === "dark" || stored === "light") {
-          return stored;
-        }
-        if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
-          return "dark";
-        }
-        return "light";
+        if (stored === "dark" || stored === "light") return stored;
+        return "dark";
       }
 
-      function applyTheme(theme) {
-        state.theme = theme === "dark" ? "dark" : "light";
-        document.documentElement.setAttribute("data-theme", state.theme);
-        localStorage.setItem(THEME_KEY, state.theme);
-        ui.themeToggleBtn.textContent = state.theme === "dark" ? "Theme: Dark" : "Theme: Light";
+      async function refreshSession() {
+        const payload = await fetchJSON("/api/auth/session");
+        ui.sessionExpiry.textContent = formatDateTime(payload.expires_at);
+        return payload;
       }
 
-      function toggleTheme() {
-        const next = state.theme === "dark" ? "light" : "dark";
-        applyTheme(next);
+      async function tryMiniAppAutoAuth() {
+        const tg = window.Telegram?.WebApp;
+        if (!tg || !tg.initData) return false;
+        tg.ready?.();
+        tg.expand?.();
+        await fetchJSON("/api/auth/telegram-miniapp", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            init_data: tg.initData
+          })
+        });
+        return true;
+      }
+
+      async function ensureAuthorized() {
+        try {
+          await refreshSession();
+          ui.authGate.classList.add("hidden");
+          return true;
+        } catch (_) {
+          try {
+            const miniAppOk = await tryMiniAppAutoAuth();
+            if (miniAppOk) {
+              await refreshSession();
+              ui.authGate.classList.add("hidden");
+              return true;
+            }
+          } catch (_) {
+            // no-op
+          }
+          ui.authGate.classList.remove("hidden");
+          return false;
+        }
+      }
+
+      function renderDistributionChart(snapshot) {
+        const data = [
+          { value: snapshot.up, name: "UP", itemStyle: { color: "#5cd89a" } },
+          { value: snapshot.down, name: "DOWN", itemStyle: { color: "#ff6f8f" } },
+          { value: snapshot.unknown, name: "UNKNOWN", itemStyle: { color: "#ffc36d" } }
+        ];
+        ui.distributionChart.setOption({
+          backgroundColor: "transparent",
+          tooltip: {
+            trigger: "item"
+          },
+          legend: {
+            bottom: 0,
+            textStyle: {
+              color: getComputedStyle(document.documentElement).getPropertyValue("--muted").trim()
+            }
+          },
+          series: [
+            {
+              type: "pie",
+              radius: ["42%", "70%"],
+              center: ["50%", "46%"],
+              label: { color: getComputedStyle(document.documentElement).getPropertyValue("--ink").trim() },
+              data
+            }
+          ]
+        });
+      }
+
+      function renderTimelineChart(rows) {
+        const seriesData = rows.map((raw) => {
+          const row = normalizeRow(raw);
+          const value = row.status === "DOWN" ? 0 : row.status === "UP" ? 1 : null;
+          return [row.timestamp, value];
+        }).filter((item) => item[1] !== null);
+
+        ui.timelineChart.setOption({
+          backgroundColor: "transparent",
+          tooltip: {
+            trigger: "axis",
+            axisPointer: { type: "line" },
+            formatter: (params) => {
+              if (!params || !params.length) return "";
+              const first = params[0];
+              const ts = formatDateTime(first.axisValue);
+              const stateLabel = Number(first.data[1]) === 1 ? "UP" : "DOWN";
+              return `${ts}<br/><b>${stateLabel}</b>`;
+            }
+          },
+          grid: {
+            left: 46,
+            right: 18,
+            top: 18,
+            bottom: 56
+          },
+          xAxis: {
+            type: "time",
+            axisLabel: {
+              color: getComputedStyle(document.documentElement).getPropertyValue("--muted").trim(),
+              formatter: (value) => {
+                const date = new Date(value);
+                return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+              }
+            },
+            axisLine: { lineStyle: { color: getComputedStyle(document.documentElement).getPropertyValue("--line").trim() } },
+            splitLine: { show: false }
+          },
+          yAxis: {
+            type: "value",
+            min: 0,
+            max: 1,
+            interval: 1,
+            axisLabel: {
+              color: getComputedStyle(document.documentElement).getPropertyValue("--muted").trim(),
+              formatter: (value) => (value === 1 ? "UP" : "DOWN")
+            },
+            axisLine: { show: false },
+            splitLine: { lineStyle: { color: getComputedStyle(document.documentElement).getPropertyValue("--line").trim() } }
+          },
+          dataZoom: [
+            {
+              type: "inside",
+              xAxisIndex: 0
+            },
+            {
+              type: "slider",
+              xAxisIndex: 0,
+              height: 18,
+              bottom: 12,
+              borderColor: getComputedStyle(document.documentElement).getPropertyValue("--line").trim(),
+              backgroundColor: "transparent",
+              fillerColor: "rgba(101,184,255,0.18)"
+            }
+          ],
+          series: [
+            {
+              name: "State",
+              type: "line",
+              step: "end",
+              smooth: false,
+              showSymbol: false,
+              lineStyle: { width: 2, color: "#65b8ff" },
+              areaStyle: { color: "rgba(101,184,255,0.18)" },
+              data: seriesData
+            }
+          ]
+        });
+      }
+
+      function renderTargetsTable(payload) {
+        ui.statusTableBody.innerHTML = "";
+        for (const target of payload.targets) {
+          const row = document.createElement("tr");
+          if (target.name === state.selectedTrack) row.classList.add("active");
+          row.innerHTML = `
+            <td>${escapeHtml(target.name)}</td>
+            <td><code>${escapeHtml(target.address)}:${target.port}</code></td>
+            <td><span class="${statusClass(target.status)}">${target.status}</span></td>
+            <td><code>${escapeHtml(formatDateTime(target.last_changed))}</code></td>
+            <td><code>${escapeHtml(formatDateTime(target.last_checked))}</code></td>
+          `;
+          row.addEventListener("click", () => {
+            state.selectedTrack = target.name;
+            syncTrackSelect();
+            renderTargetsTable(payload);
+            void loadLogs();
+          });
+          ui.statusTableBody.appendChild(row);
+        }
+      }
+
+      function syncTrackSelect() {
+        if (!state.tracks.length) {
+          ui.trackSelect.innerHTML = "";
+          return;
+        }
+        if (!state.selectedTrack || !state.tracks.includes(state.selectedTrack)) {
+          state.selectedTrack = state.tracks[0];
+        }
+        ui.trackSelect.innerHTML = state.tracks
+          .map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`)
+          .join("");
+        ui.trackSelect.value = state.selectedTrack;
+      }
+
+      async function loadStatus() {
+        const payload = await fetchJSON("/api/status");
+        ui.summaryTotal.textContent = String(payload.total);
+        ui.summaryUp.textContent = String(payload.up);
+        ui.summaryDown.textContent = String(payload.down);
+        ui.summaryUnknown.textContent = String(payload.unknown);
+        ui.snapshotTime.textContent = formatDateTime(payload.generated_at);
+        state.tracks = payload.targets.map((target) => target.name);
+        syncTrackSelect();
+        renderTargetsTable(payload);
+        renderDistributionChart(payload);
+        setStatus(`Status updated ${formatDateTime(new Date().toISOString())}`);
+      }
+
+      function buildLogText(rows) {
+        if (!rows.length) return "(no rows)";
+        return rows
+          .map((raw) => {
+            const row = normalizeRow(raw);
+            return `${formatDateTime(row.timestamp)}  ${row.status}  ${row.endpoint}  ${row.reason}`;
+          })
+          .join("\n");
+      }
+
+      async function loadLogs() {
+        if (!state.selectedTrack) {
+          ui.logsMeta.textContent = "No track selected.";
+          ui.logsOutput.textContent = "(no track)";
+          renderTimelineChart([]);
+          return;
+        }
+        const hours = Number(ui.rangeSelect.value) || 24;
+        const limit = Number(ui.limitInput.value) || 10000;
+        const tzOffset = -new Date().getTimezoneOffset();
+        const query = new URLSearchParams({
+          track: state.selectedTrack,
+          hours: String(hours),
+          limit: String(limit),
+          tz_offset_minutes: String(tzOffset)
+        });
+        const payload = await fetchJSON(`/api/logs?${query.toString()}`);
+        const rows = Array.isArray(payload.rows) ? payload.rows : [];
+        state.rows = rows;
+        ui.logsMeta.textContent = `Track: ${payload.track} | Range: ${hours}h | Rows: ${rows.length}`;
+        ui.logsOutput.textContent = buildLogText(rows);
+        renderTimelineChart(rows);
+      }
+
+      function clearTimers() {
+        if (state.refreshTimer) clearInterval(state.refreshTimer);
+        if (state.logTimer) clearInterval(state.logTimer);
+        state.refreshTimer = null;
+        state.logTimer = null;
+      }
+
+      async function logout() {
+        try {
+          await fetchJSON("/auth/logout", { method: "POST" });
+        } catch (_) {
+          // noop
+        }
+        clearTimers();
+        ui.authGate.classList.remove("hidden");
+        setStatus("Logged out");
       }
 
       async function bootstrap() {
         applyTheme(resolveInitialTheme());
-        try {
-          await refreshSession();
-          await loadStatus();
-          await loadLogs();
-        } catch (error) {
-          state.authorized = false;
-          ui.authGate.classList.remove("hidden");
-          clearTimers();
-          setStatusLine(`Authorization required: ${error.message}`);
+        const ok = await ensureAuthorized();
+        if (!ok) {
+          setStatus("Authorization required");
           return;
         }
+        await loadStatus();
+        await loadLogs();
 
         clearTimers();
         state.refreshTimer = setInterval(() => {
-          void loadStatus().catch((error) => {
-            clearTimers();
-            ui.authGate.classList.remove("hidden");
-            setStatusLine(`Session lost: ${error.message}`);
-          });
+          void loadStatus().catch((error) => setStatus(`Status error: ${error.message}`));
         }, 5000);
-
         state.logTimer = setInterval(() => {
-          void loadLogs().catch((error) => {
-            setStatusLine(`Log refresh error: ${error.message}`);
-          });
+          void loadLogs().catch((error) => setStatus(`Log error: ${error.message}`));
         }, 10000);
       }
 
-      ui.refreshStatusBtn.addEventListener("click", () => {
-        void loadStatus().catch((error) => {
-          setStatusLine(`Status refresh failed: ${error.message}`);
-        });
+      ui.refreshBtn.addEventListener("click", () => {
+        void loadStatus().then(() => loadLogs()).catch((error) => setStatus(`Refresh error: ${error.message}`));
       });
 
-      ui.refreshLogsBtn.addEventListener("click", () => {
+      ui.logsBtn.addEventListener("click", () => {
         state.selectedTrack = ui.trackSelect.value;
-        void loadLogs().catch((error) => {
-          setStatusLine(`Log load failed: ${error.message}`);
-        });
+        void loadLogs().catch((error) => setStatus(`Load logs error: ${error.message}`));
+      });
+
+      ui.rangeSelect.addEventListener("change", () => {
+        void loadLogs().catch((error) => setStatus(`Range update error: ${error.message}`));
       });
 
       ui.trackSelect.addEventListener("change", () => {
         state.selectedTrack = ui.trackSelect.value;
-        void loadLogs().catch((error) => {
-          setStatusLine(`Log load failed: ${error.message}`);
-        });
+        void loadLogs().catch((error) => setStatus(`Track update error: ${error.message}`));
       });
 
       ui.logoutBtn.addEventListener("click", () => {
         void logout();
       });
 
-      ui.themeToggleBtn.addEventListener("click", () => {
-        toggleTheme();
-        void loadStatus().catch(() => {});
-        void loadLogs().catch(() => {});
+      ui.themeBtn.addEventListener("click", () => {
+        applyTheme(state.theme === "dark" ? "light" : "dark");
+        renderDistributionChart({
+          total: Number(ui.summaryTotal.textContent),
+          up: Number(ui.summaryUp.textContent),
+          down: Number(ui.summaryDown.textContent),
+          unknown: Number(ui.summaryUnknown.textContent)
+        });
+        renderTimelineChart(state.rows);
       });
 
       window.addEventListener("resize", () => {
-        void loadStatus().catch(() => {});
-        void loadLogs().catch(() => {});
+        ui.timelineChart.resize();
+        ui.distributionChart.resize();
       });
 
       void bootstrap();

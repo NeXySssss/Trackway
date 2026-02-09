@@ -1,92 +1,132 @@
 package logstore
 
 import (
-	"fmt"
-	"os"
-	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
-
-	"trackway/internal/util"
 )
 
+type ClickHouseOptions struct {
+	Addr         string
+	Database     string
+	Username     string
+	Password     string
+	Table        string
+	Secure       bool
+	DialTimeout  time.Duration
+	MaxOpenConns int
+	MaxIdleConns int
+}
+
 type Store struct {
-	dir string
+	backend backend
 }
 
 type Row struct {
-	Timestamp string
-	Status    string
-	Endpoint  string
-	Reason    string
+	Timestamp string `json:"timestamp"`
+	Status    string `json:"status"`
+	Endpoint  string `json:"endpoint"`
+	Reason    string `json:"reason"`
 }
 
-func New(dir string) (*Store, error) {
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+type backend interface {
+	append(targetName, address string, port int, status bool, reason string, at time.Time) error
+	readSince(targetName string, since time.Time, limit int) []Row
+}
+
+func New(_ string) (*Store, error) {
+	// Backward-compatible constructor used in tests.
+	return NewMemory()
+}
+
+func NewMemory() (*Store, error) {
+	return &Store{
+		backend: &memoryBackend{
+			rowsByTrack: make(map[string][]Row),
+		},
+	}, nil
+}
+
+func NewClickHouse(options ClickHouseOptions) (*Store, error) {
+	ch, err := newClickHouseBackend(options)
+	if err != nil {
 		return nil, err
 	}
-	return &Store{dir: dir}, nil
+	return &Store{backend: ch}, nil
 }
 
 func (s *Store) Append(targetName, address string, port int, status bool, reason string) error {
-	path := s.pathFor(targetName)
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	line := fmt.Sprintf(
-		"%s\t%s\t%s:%d\t%s\n",
-		time.Now().UTC().Format(time.RFC3339),
-		statusText(status),
-		address,
-		port,
-		reason,
-	)
-	_, err = file.WriteString(line)
-	return err
+	return s.backend.append(targetName, address, port, status, reason, time.Now().UTC())
 }
 
 func (s *Store) ReadLastDays(targetName string, days int, limit int) []Row {
-	path := s.pathFor(targetName)
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil
+	if days <= 0 {
+		days = 7
 	}
-
-	lines := strings.Split(string(data), "\n")
+	if limit <= 0 {
+		limit = 1000
+	}
 	cutoff := time.Now().UTC().Add(-time.Duration(days) * 24 * time.Hour)
-	rows := make([]Row, 0, len(lines))
-
-	for _, line := range lines {
-		if line == "" {
-			continue
-		}
-		parts := strings.Split(line, "\t")
-		if len(parts) < 4 {
-			continue
-		}
-		ts, err := time.Parse(time.RFC3339, parts[0])
-		if err != nil || ts.Before(cutoff) {
-			continue
-		}
-		rows = append(rows, Row{
-			Timestamp: parts[0],
-			Status:    strings.ToUpper(parts[1]),
-			Endpoint:  parts[2],
-			Reason:    strings.ToUpper(parts[3]),
-		})
-	}
-
-	if len(rows) > limit {
-		return rows[len(rows)-limit:]
-	}
-	return rows
+	return s.backend.readSince(targetName, cutoff, limit)
 }
 
-func (s *Store) pathFor(targetName string) string {
-	return filepath.Join(s.dir, util.SafeName(targetName)+".log")
+func (s *Store) ReadLastHours(targetName string, hours int, limit int) []Row {
+	if hours <= 0 {
+		hours = 24
+	}
+	if limit <= 0 {
+		limit = 1000
+	}
+	cutoff := time.Now().UTC().Add(-time.Duration(hours) * time.Hour)
+	return s.backend.readSince(targetName, cutoff, limit)
+}
+
+type memoryBackend struct {
+	mu          sync.RWMutex
+	rowsByTrack map[string][]Row
+}
+
+func (m *memoryBackend) append(targetName, address string, port int, status bool, reason string, at time.Time) error {
+	row := Row{
+		Timestamp: at.UTC().Format(time.RFC3339),
+		Status:    statusText(status),
+		Endpoint:  address + ":" + strconv.Itoa(port),
+		Reason:    strings.ToUpper(reason),
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.rowsByTrack[targetName] = append(m.rowsByTrack[targetName], row)
+	return nil
+}
+
+func (m *memoryBackend) readSince(targetName string, since time.Time, limit int) []Row {
+	m.mu.RLock()
+	rows := append([]Row(nil), m.rowsByTrack[targetName]...)
+	m.mu.RUnlock()
+
+	filtered := make([]Row, 0, len(rows))
+	for _, row := range rows {
+		ts, err := time.Parse(time.RFC3339, row.Timestamp)
+		if err != nil {
+			continue
+		}
+		if ts.Before(since) {
+			continue
+		}
+		filtered = append(filtered, row)
+	}
+
+	sort.Slice(filtered, func(i, j int) bool {
+		return filtered[i].Timestamp < filtered[j].Timestamp
+	})
+
+	if len(filtered) > limit {
+		return filtered[len(filtered)-limit:]
+	}
+	return filtered
 }
 
 func statusText(value bool) string {

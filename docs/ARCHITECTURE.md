@@ -33,6 +33,11 @@ internal/tracker
 4. Telegram updates go to `CommandHandler`.
 5. Dashboard reads state/log data via `Service` query methods.
 
+Concrete runtime adapters:
+- Logs: `logstore.NewClickHouse(...)` in production (memory backend for tests).
+- Dashboard: Go `net/http` serves embedded Astro `frontend/dist` assets.
+- Auth: one-time `/authme` token -> session cookie; optional Telegram Mini App auto-auth.
+
 ## 4. Responsibilities
 ### `MonitorEngine`
 - Owns in-memory target state.
@@ -53,6 +58,16 @@ internal/tracker
 - Public app boundary used by `main` and dashboard wiring.
 - Delegates to internal components without embedding business rules.
 
+### `logstore`
+- Owns storage backend contract (`append`, `readSince`).
+- ClickHouse backend is append/query only; schema bootstrap is isolated here.
+- Keeps read model stable (`[]Row`) so tracker/dashboard stay storage-agnostic.
+
+### `dashboard`
+- Owns browser auth/session lifecycle and API handlers.
+- Verifies Telegram Mini App `initData` server-side.
+- Serves static UI from embedded Astro build output.
+
 ## 5. Dependency Direction
 - `tracker/engine` depends on `config` + `logstore`.
 - `tracker/alerts` depends on `Notifier` contract only.
@@ -67,3 +82,10 @@ No adapter should import another adapter directly.
 - New storage backend: keep `logstore` API shape or add interface wrapper at composition layer.
 - New bot command: implement in `commands.go`; avoid touching alert/monitor modules.
 - New alert policy: implement inside `alerts.go`; no command/dashboard changes required.
+
+## 7. Frontend Build Pipeline
+1. Develop UI in `internal/dashboard/frontend/src`.
+2. Build with `npm run build` -> `internal/dashboard/frontend/dist`.
+3. Go binary embeds `frontend/dist` via `go:embed`.
+
+Production does not require Node runtime. Node is only needed at build time.

@@ -14,6 +14,5 @@ WORKDIR /app
 COPY --from=builder /out/port-tracker /app/port-tracker
 
 ENV CONFIG_PATH=/app/config.yaml
-ENV LOG_DIR=/data/logs
 
 ENTRYPOINT ["/app/port-tracker"]

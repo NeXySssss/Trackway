@@ -18,11 +18,25 @@ type Config struct {
 		ConnectTimeoutSeconds int `yaml:"connect_timeout_seconds"`
 		MaxParallelChecks     int `yaml:"max_parallel_checks"`
 	} `yaml:"monitoring"`
-	Storage struct {
-		LogDir string `yaml:"log_dir"`
-	} `yaml:"storage"`
+	Storage   Storage   `yaml:"storage"`
 	Dashboard Dashboard `yaml:"dashboard"`
 	Targets   []Target  `yaml:"targets"`
+}
+
+type Storage struct {
+	ClickHouse ClickHouse `yaml:"clickhouse"`
+}
+
+type ClickHouse struct {
+	Addr               string `yaml:"addr"`
+	Database           string `yaml:"database"`
+	Username           string `yaml:"username"`
+	Password           string `yaml:"password"`
+	Table              string `yaml:"table"`
+	Secure             bool   `yaml:"secure"`
+	DialTimeoutSeconds int    `yaml:"dial_timeout_seconds"`
+	MaxOpenConns       int    `yaml:"max_open_conns"`
+	MaxIdleConns       int    `yaml:"max_idle_conns"`
 }
 
 type Target struct {
@@ -37,6 +51,8 @@ type Dashboard struct {
 	PublicURL           string `yaml:"public_url"`
 	AuthTokenTTLSeconds int    `yaml:"auth_token_ttl_seconds"`
 	SecureCookie        bool   `yaml:"secure_cookie"`
+	MiniAppEnabled      bool   `yaml:"mini_app_enabled"`
+	MiniAppMaxAgeSec    int    `yaml:"mini_app_max_age_seconds"`
 }
 
 func Load(path string) (Config, error) {
@@ -62,6 +78,29 @@ func Load(path string) (Config, error) {
 		}
 	}
 
+	cfg.Storage.ClickHouse.Addr = strings.TrimSpace(cfg.Storage.ClickHouse.Addr)
+	cfg.Storage.ClickHouse.Database = strings.TrimSpace(cfg.Storage.ClickHouse.Database)
+	cfg.Storage.ClickHouse.Username = strings.TrimSpace(cfg.Storage.ClickHouse.Username)
+	cfg.Storage.ClickHouse.Table = strings.TrimSpace(cfg.Storage.ClickHouse.Table)
+	if cfg.Storage.ClickHouse.Addr == "" || cfg.Storage.ClickHouse.Database == "" {
+		return cfg, errors.New("storage.clickhouse.addr and storage.clickhouse.database are required")
+	}
+	if cfg.Storage.ClickHouse.Username == "" {
+		cfg.Storage.ClickHouse.Username = "default"
+	}
+	if cfg.Storage.ClickHouse.Table == "" {
+		cfg.Storage.ClickHouse.Table = "track_logs"
+	}
+	if cfg.Storage.ClickHouse.DialTimeoutSeconds <= 0 {
+		cfg.Storage.ClickHouse.DialTimeoutSeconds = 5
+	}
+	if cfg.Storage.ClickHouse.MaxOpenConns <= 0 {
+		cfg.Storage.ClickHouse.MaxOpenConns = 10
+	}
+	if cfg.Storage.ClickHouse.MaxIdleConns <= 0 {
+		cfg.Storage.ClickHouse.MaxIdleConns = 5
+	}
+
 	cfg.Dashboard.ListenAddress = strings.TrimSpace(cfg.Dashboard.ListenAddress)
 	cfg.Dashboard.PublicURL = strings.TrimSpace(cfg.Dashboard.PublicURL)
 	if !cfg.Dashboard.Enabled && (cfg.Dashboard.ListenAddress != "" || cfg.Dashboard.PublicURL != "") {
@@ -72,6 +111,9 @@ func Load(path string) (Config, error) {
 	}
 	if cfg.Dashboard.AuthTokenTTLSeconds <= 0 {
 		cfg.Dashboard.AuthTokenTTLSeconds = 300
+	}
+	if cfg.Dashboard.MiniAppMaxAgeSec <= 0 {
+		cfg.Dashboard.MiniAppMaxAgeSec = 86400
 	}
 	if cfg.Dashboard.Enabled && cfg.Dashboard.PublicURL == "" {
 		return cfg, errors.New("dashboard.public_url is required when dashboard.enabled is true")

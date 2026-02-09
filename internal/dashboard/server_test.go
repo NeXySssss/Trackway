@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"context"
+	"encoding/json"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -30,7 +31,7 @@ func TestStaticHandlerServesIndexWithoutRedirect(t *testing.T) {
 	srv, err := New(config.Dashboard{
 		ListenAddress: ":0",
 		PublicURL:     "http://127.0.0.1:8080",
-	}, stubProvider{})
+	}, "test-bot-token", stubProvider{})
 	if err != nil {
 		t.Fatalf("new server: %v", err)
 	}
@@ -56,7 +57,7 @@ func TestStaticHandlerServesIndexForUnknownPath(t *testing.T) {
 	srv, err := New(config.Dashboard{
 		ListenAddress: ":0",
 		PublicURL:     "http://127.0.0.1:8080",
-	}, stubProvider{})
+	}, "test-bot-token", stubProvider{})
 	if err != nil {
 		t.Fatalf("new server: %v", err)
 	}
@@ -79,7 +80,7 @@ func TestHealthEndpoint(t *testing.T) {
 	srv, err := New(config.Dashboard{
 		ListenAddress: ":0",
 		PublicURL:     "http://127.0.0.1:8080",
-	}, stubProvider{})
+	}, "test-bot-token", stubProvider{})
 	if err != nil {
 		t.Fatalf("new server: %v", err)
 	}
@@ -108,7 +109,7 @@ func TestListenAndServeReturnsStartupError(t *testing.T) {
 	srv, err := New(config.Dashboard{
 		ListenAddress: listener.Addr().String(),
 		PublicURL:     "http://127.0.0.1:8080",
-	}, stubProvider{})
+	}, "test-bot-token", stubProvider{})
 	if err != nil {
 		t.Fatalf("new server: %v", err)
 	}
@@ -137,7 +138,7 @@ func TestAuthVerifyRequiresPostToConsumeToken(t *testing.T) {
 	srv, err := New(config.Dashboard{
 		ListenAddress: ":0",
 		PublicURL:     "http://127.0.0.1:8080",
-	}, stubProvider{})
+	}, "test-bot-token", stubProvider{})
 	if err != nil {
 		t.Fatalf("new server: %v", err)
 	}
@@ -180,5 +181,78 @@ func TestAuthVerifyRequiresPostToConsumeToken(t *testing.T) {
 	srv.httpServer.Handler.ServeHTTP(postRec2, postReq2)
 	if postRec2.Code != http.StatusUnauthorized {
 		t.Fatalf("expected POST reuse 401, got %d", postRec2.Code)
+	}
+}
+
+func TestMiniAppAuthEndpoint(t *testing.T) {
+	t.Parallel()
+
+	srv, err := New(config.Dashboard{
+		ListenAddress:    ":0",
+		PublicURL:        "http://127.0.0.1:8080",
+		MiniAppEnabled:   true,
+		MiniAppMaxAgeSec: 3600,
+	}, "test-bot-token", stubProvider{})
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+
+	initData := buildSignedInitData("test-bot-token", time.Now().UTC(), 42)
+	body, _ := json.Marshal(map[string]string{
+		"init_data": initData,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/telegram-miniapp", strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.httpServer.Handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+	if setCookie := rec.Header().Get("Set-Cookie"); !strings.Contains(setCookie, "trackway_dashboard_session=") {
+		t.Fatalf("expected session cookie, got: %q", setCookie)
+	}
+}
+
+func TestFormatRowLineUsesReadableClientTime(t *testing.T) {
+	t.Parallel()
+
+	row := logstore.Row{
+		Timestamp: "2026-02-09T11:47:46Z",
+		Status:    "UP",
+		Endpoint:  "100.121.180.77:443",
+		Reason:    "POLL",
+	}
+	loc := time.FixedZone("client", 3*60*60)
+
+	got := formatRowLine(row, loc)
+	want := "09.02.2026 14:47:46  UP  100.121.180.77:443  POLL"
+	if got != want {
+		t.Fatalf("unexpected line format:\nwant: %q\ngot:  %q", want, got)
+	}
+	if strings.Contains(got, "T") || strings.Contains(got, "Z") {
+		t.Fatalf("line should not contain RFC3339 markers: %q", got)
+	}
+}
+
+func TestFilterRowsByCutoff(t *testing.T) {
+	t.Parallel()
+
+	rows := []logstore.Row{
+		{Timestamp: "2026-02-09T10:00:00Z", Status: "UP"},
+		{Timestamp: "2026-02-09T11:00:00Z", Status: "DOWN"},
+		{Timestamp: "2026-02-09T12:00:00Z", Status: "UP"},
+	}
+	cutoff := time.Date(2026, 2, 9, 11, 0, 0, 0, time.UTC)
+
+	got := filterRowsByCutoff(rows, cutoff)
+	if len(got) != 2 {
+		t.Fatalf("expected 2 rows after cutoff, got %d", len(got))
+	}
+	if got[0].Timestamp != "2026-02-09T11:00:00Z" {
+		t.Fatalf("unexpected first row timestamp: %s", got[0].Timestamp)
+	}
+	if got[1].Timestamp != "2026-02-09T12:00:00Z" {
+		t.Fatalf("unexpected second row timestamp: %s", got[1].Timestamp)
 	}
 }

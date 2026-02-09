@@ -8,7 +8,16 @@ monitoring:
   max_parallel_checks: 16
 
 storage:
-  log_dir: "logs"
+  clickhouse:
+    addr: "clickhouse:9000"
+    database: "trackway"
+    username: "default"
+    password: ""
+    table: "track_logs"
+    secure: false
+    dial_timeout_seconds: 5
+    max_open_conns: 10
+    max_idle_conns: 5
 
 dashboard:
   enabled: true
@@ -16,6 +25,8 @@ dashboard:
   public_url: "https://s2-lt.nexy.one"
   auth_token_ttl_seconds: 300
   secure_cookie: true
+  mini_app_enabled: true
+  mini_app_max_age_seconds: 86400
 
 targets:
   - name: "track-ssh"

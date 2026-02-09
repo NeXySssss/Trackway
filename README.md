@@ -1,123 +1,119 @@
 # Trackway Bot (Go)
 
-TCP port tracker for Telegram with low memory usage.
-
-Uses latest deps in this repo:
-- `github.com/go-telegram/bot v1.18.0`
-- `gopkg.in/yaml.v3 v3.0.1`
+TCP port tracker with Telegram alerts, ClickHouse history, and a built-in Astro dashboard.
 
 ## Features
 - Monitor `address:port` targets on interval.
-- Telegram alerts on `DOWN` and `RECOVERED` (batched per check cycle).
-- If a `state-change` DOWN recovers within 30s, the original DOWN message is edited to `DOWN -> RECOVERED`.
+- Telegram alerts on `DOWN` and `RECOVERED` (batched per cycle).
 - Commands: `/start`, `/list`, `/status`, `/logs <track>`, `/authme`.
-- Per-track logs, filtered by last 7 days in `/logs`.
-- Built-in web dashboard with:
-  - live status table for all tracks
-  - charts (snapshot distribution + per-track timeline from logs)
-  - light/dark theme toggle
-  - full logs view per track
-  - Telegram-issued browser auth links (`/authme`)
-  - session cookie that expires on browser restart or after 24h
+- ClickHouse-backed logs (`INIT`, `CHANGE`, `POLL`) with long retention.
+- Dashboard with:
+  - responsive table for all targets
+  - availability timeline with hover timestamp
+  - current-state pie chart
+  - full raw logs viewer
+  - dark/light theme
+  - browser auth via `/authme` link
+  - Telegram Mini App auto-auth (`initData` verification)
 
 ## Project layout
-- `cmd/trackway/main.go` - entrypoint and wiring.
+- `cmd/trackway/main.go` - runtime wiring.
 - `internal/config` - config parsing and validation.
-- `internal/telegram` - Telegram client adapter.
-- `internal/tracker` - monitor engine + alert orchestration + bot commands.
-- `internal/dashboard` - HTTP server, auth flow, dashboard API and Astro UI assets.
-- `internal/logstore` - append/read logs by track.
-- `internal/util` - shared text/time helpers.
-- `docs/ARCHITECTURE.md` - module map, dependency direction and extension rules.
+- `internal/logstore` - log storage backends (memory + ClickHouse).
+- `internal/tracker` - monitor engine, alerts, commands, service facade.
+- `internal/telegram` - Telegram adapter.
+- `internal/dashboard` - auth flow, API, and embedded Astro dist.
+- `docs/ARCHITECTURE.md` - dependency boundaries and extension rules.
 
 ## Config
-`config.yaml` format:
+Use `config.example.yaml` as the base. Minimal shape:
 
 ```yaml
 bot:
   token: "PUT_BOT_TOKEN_HERE"
   chat_id: 123456789
+
 monitoring:
   interval_seconds: 5
   connect_timeout_seconds: 2
   max_parallel_checks: 16
+
 storage:
-  log_dir: "logs"
+  clickhouse:
+    addr: "clickhouse:9000"
+    database: "trackway"
+    username: "default"
+    password: ""
+    table: "track_logs"
+    secure: false
+    dial_timeout_seconds: 5
+    max_open_conns: 10
+    max_idle_conns: 5
+
 dashboard:
   enabled: true
   listen_address: ":8080"
   public_url: "https://s2-lt.nexy.one"
   auth_token_ttl_seconds: 300
   secure_cookie: true
-targets:
-  - name: "track-ssh"
-    address: "100.64.0.10"
-    port: 22
+  mini_app_enabled: true
+  mini_app_max_age_seconds: 86400
 ```
 
-`dashboard.public_url` is used in `/authme` links.
-Use a public HTTPS URL in production and set `secure_cookie: true`.
-
-Log reasons:
-- `INIT` - first check after service start
-- `CHANGE` - state changed (`UP <-> DOWN`)
-- `POLL` - regular check without state change
+Notes:
+- `dashboard.public_url` is used in `/authme` links.
+- In production use HTTPS and keep `secure_cookie: true`.
+- Session ends on browser restart or 24h server TTL.
 
 ## Dashboard auth flow
-1. Send `/authme` to the bot from `bot.chat_id`.
-2. Open the link from bot message.
-3. On `/auth/verify` click **Authorize this browser** (token is consumed on POST only).
-4. Browser receives a session cookie and is redirected to dashboard `/`.
-5. Session ends on browser restart (session cookie) or after 24h (server-side TTL), whichever comes first.
+1. Send `/authme` to the bot.
+2. Open the bot link.
+3. On `/auth/verify` click `Authorize this browser`.
+4. Browser gets a session cookie and is redirected to `/`.
 
-Note:
-- Open `/authme` link in the same browser where you use dashboard.
-- Telegram/link-preview crawlers may open the URL; two-step verify prevents token loss before your click.
+Why two steps:
+- Telegram/link previews can pre-open URLs.
+- GET only renders confirmation.
+- Token is consumed only on POST.
 
-## Local run
+## Telegram Mini App auth
+- Frontend tries auto-auth via `POST /api/auth/telegram-miniapp` if opened inside Telegram WebApp.
+- Backend verifies Telegram `initData` signature with bot token and checks `auth_date`.
+- To use Mini App in production, set bot domain in BotFather so WebApp can open your `dashboard.public_url`.
+
+## Run locally
 ```powershell
-go build -o port-tracker.exe ./cmd/trackway
-.\port-tracker.exe
+go test ./...
+go build -o trackway.exe ./cmd/trackway
+.\trackway.exe
 ```
 
-## Docker Compose run
+## Run with Docker Compose
 ```powershell
 docker compose up -d --build
 ```
 
-Compose config in `docker-compose.yml`:
-- read-only root filesystem (`read_only: true`)
-- writable logs only via named volume `trackway-data:/data/logs`
-- config mounted read-only `./config.yaml:/app/config.yaml:ro`
-- runtime user is `root` to avoid host/volume UID permission issues
-- dashboard published on `http://localhost:8080`
+Current compose:
+- starts `clickhouse` + `trackway`
+- mounts `./config.yaml` read-only
+- exposes dashboard at `http://localhost:8083` (container listens on `:8080`)
 
-## Caddy reverse proxy
-Example Caddy config: `docs/Caddyfile.example`
-
-Checklist for `502 Bad Gateway`:
-1. Trackway process is running and listening on `:8080`.
-2. `dashboard.public_url` matches your public domain exactly (`https://s2-lt.nexy.one`).
-3. Caddy upstream points to the real backend (`127.0.0.1:8080` on same host, or service name in Docker network).
-4. Health endpoint works from proxy host:
-   - `curl http://127.0.0.1:8080/healthz`
-5. If using HTTPS domain, `secure_cookie: true`.
-
-## Stop
+Stop:
 ```powershell
 docker compose down
 ```
 
-## Quality checks
-```powershell
-go test ./...
-go vet ./...
-go build ./...
-```
+## Caddy reverse proxy
+Reference config: `docs/Caddyfile.example`
 
-`max_parallel_checks` controls how many targets are probed concurrently in each cycle.
+Quick 502 checklist:
+1. Backend health works on host:
+   - `curl http://127.0.0.1:8083/healthz`
+2. `dashboard.public_url` equals your external URL exactly.
+3. Caddy upstream points to the same local port (`127.0.0.1:8083`).
 
-To rebuild Astro assets after UI edits:
+## Frontend build
+Astro assets are built once and embedded into the Go binary.
 
 ```powershell
 cd internal/dashboard/frontend
