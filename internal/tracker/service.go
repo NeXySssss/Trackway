@@ -59,6 +59,14 @@ func (s *Service) Logs(trackName string, days int, limit int) ([]logstore.Row, b
 	return s.engine.Logs(trackName, days, limit)
 }
 
+func (s *Service) UpsertTarget(name, address string, port int) error {
+	return s.engine.UpsertTarget(name, address, port)
+}
+
+func (s *Service) DeleteTarget(name string) error {
+	return s.engine.DeleteTarget(name)
+}
+
 func (s *Service) applyStatus(target *TargetState, status bool) *alertEvent {
 	return s.engine.applyStatus(target, status)
 }

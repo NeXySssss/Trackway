@@ -4,6 +4,7 @@ TCP port tracker with Telegram alerts, ClickHouse history, and a built-in Astro 
 
 ## Features
 - Monitor `address:port` targets on interval.
+- Manage targets from dashboard (`add/update/delete`) with persistence in ClickHouse.
 - Telegram alerts on `DOWN` and `RECOVERED` (batched per cycle).
 - Commands: `/start`, `/list`, `/status`, `/logs <track>`, `/authme`.
 - ClickHouse-backed logs (`INIT`, `CHANGE`, `POLL`) with long retention.
@@ -64,6 +65,11 @@ Notes:
 - `dashboard.public_url` is used in `/authme` links.
 - In production use HTTPS and keep `secure_cookie: true`.
 - Session ends on browser restart or 24h server TTL.
+- `targets` are optional in YAML now. They are used only as one-time bootstrap when DB target table is empty.
+- Runtime config can be passed in one line:
+  - `TRACKWAY_CONFIG_JSON='{"bot":...}'`
+  - or `TRACKWAY_CONFIG_JSON_B64='<base64-json>'`
+- ClickHouse connection fields can be overridden by env: `CLICKHOUSE_ADDR`, `CLICKHOUSE_DB`, `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD`, `CLICKHOUSE_TABLE`.
 
 ## Dashboard auth flow
 1. Send `/authme` to the bot.
@@ -97,7 +103,7 @@ Current compose:
 - starts `clickhouse` + `trackway`
 - mounts `./config.yaml` read-only
 - keeps `clickhouse` and `trackway` in the same Docker network
-- exposes dashboard only on local host `http://127.0.0.1:8083` (container listens on `:8080`) for reverse proxy (Caddy/Nginx)
+- exposes dashboard on `${TRACKWAY_BIND_IP:-127.0.0.1}:${TRACKWAY_BIND_PORT:-8083}` (container listens on `:8080`) for reverse proxy (Caddy/Nginx)
 
 Stop:
 ```powershell
@@ -120,7 +126,9 @@ Quick 502 checklist:
 - SSH secrets for deploy: `DEPLOY_SSH_HOST`, `DEPLOY_SSH_USER`, `DEPLOY_SSH_PRIVATE_KEY` (and optional `DEPLOY_SSH_PORT`, `DEPLOY_SSH_KNOWN_HOSTS`)
 - Legacy SSH secret aliases also work: `SSH_HOST`, `SSH_USER`, `SSH_PRIVATE_KEY`, `SSH_PORT`, `SSH_KNOWN_HOSTS`
 - GHCR auth uses built-in `GITHUB_TOKEN` from GitHub Actions
-- ClickHouse `database/username/password` are now read directly from `/opt/trackway/config.yaml` during deploy (no extra DB password secret required)
+- CI deploy uses explicit secrets/env for ClickHouse (`CLICKHOUSE_ADDR`, `CLICKHOUSE_DB`, `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD`) and no longer parses YAML on remote host
+- Optional runtime config secrets: `TRACKWAY_CONFIG_JSON` or `TRACKWAY_CONFIG_JSON_B64`
+- Optional bind secrets for dashboard host port: `TRACKWAY_BIND_IP`, `TRACKWAY_BIND_PORT`
 
 ## Frontend build
 Astro assets are built once and embedded into the Go binary.

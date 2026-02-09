@@ -190,6 +190,17 @@
         padding: 0.72rem 0.8rem;
       }
 
+      .targets-controls {
+        display: grid;
+        grid-template-columns: 1fr 1fr 130px auto auto;
+        gap: 0.42rem;
+        margin-bottom: 0.56rem;
+      }
+
+      .targets-controls input {
+        min-width: 0;
+      }
+
       .table-wrap {
         width: 100%;
         overflow: auto;
@@ -356,6 +367,10 @@
         .chart {
           height: 230px;
         }
+
+        .targets-controls {
+          grid-template-columns: 1fr;
+        }
       }
     </style>
   </head>
@@ -404,6 +419,13 @@
 
       <section class="panel table-panel">
         <p class="panel-title">Targets</p>
+        <div class="targets-controls">
+          <input id="target-name-input" type="text" placeholder="name (example: api-main)" />
+          <input id="target-address-input" type="text" placeholder="address (example: 100.64.0.10)" />
+          <input id="target-port-input" type="number" min="1" max="65535" value="443" />
+          <button id="target-save-btn" type="button" class="btn-primary">Add / Update</button>
+          <button id="target-delete-btn" type="button" class="btn-danger">Delete</button>
+        </div>
         <div class="table-wrap">
           <table>
             <thead>
@@ -453,6 +475,11 @@
         rangeSelect: document.getElementById("range-select"),
         trackSelect: document.getElementById("track-select"),
         limitInput: document.getElementById("limit-input"),
+        targetNameInput: document.getElementById("target-name-input"),
+        targetAddressInput: document.getElementById("target-address-input"),
+        targetPortInput: document.getElementById("target-port-input"),
+        targetSaveBtn: document.getElementById("target-save-btn"),
+        targetDeleteBtn: document.getElementById("target-delete-btn"),
         logsOutput: document.getElementById("logs-output"),
         logsMeta: document.getElementById("logs-meta"),
         statusLine: document.getElementById("status-line"),
@@ -725,11 +752,19 @@
           row.addEventListener("click", () => {
             state.selectedTrack = target.name;
             syncTrackSelect();
+            fillTargetForm(target);
             renderTargetsTable(payload);
             void loadLogs();
           });
           ui.statusTableBody.appendChild(row);
         }
+      }
+
+      function fillTargetForm(target) {
+        if (!target) return;
+        ui.targetNameInput.value = target.name || "";
+        ui.targetAddressInput.value = target.address || "";
+        ui.targetPortInput.value = String(target.port || 443);
       }
 
       function syncTrackSelect() {
@@ -755,9 +790,44 @@
         ui.snapshotTime.textContent = formatDateTime(payload.generated_at);
         state.tracks = payload.targets.map((target) => target.name);
         syncTrackSelect();
+        if (state.selectedTrack) {
+          const selected = payload.targets.find((target) => target.name === state.selectedTrack);
+          if (selected) {
+            fillTargetForm(selected);
+          }
+        }
         renderTargetsTable(payload);
         renderDistributionChart(payload);
         setStatus(`Status updated ${formatDateTime(new Date().toISOString())}`);
+      }
+
+      async function upsertTarget() {
+        const name = ui.targetNameInput.value.trim();
+        const address = ui.targetAddressInput.value.trim();
+        const port = Number(ui.targetPortInput.value);
+        if (!name || !address || !Number.isFinite(port) || port < 1 || port > 65535) {
+          throw new Error("Target fields are invalid");
+        }
+        await fetchJSON("/api/targets", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ name, address, port: Math.trunc(port) })
+        });
+      }
+
+      async function deleteTarget() {
+        const name = ui.targetNameInput.value.trim();
+        if (!name) {
+          throw new Error("Target name is required for delete");
+        }
+        await fetchJSON(`/api/targets?name=${encodeURIComponent(name)}`, {
+          method: "DELETE"
+        });
+        if (state.selectedTrack === name) {
+          state.selectedTrack = "";
+        }
       }
 
       function buildLogText(rows) {
@@ -867,6 +937,22 @@
       window.addEventListener("resize", () => {
         ui.timelineChart.resize();
         ui.distributionChart.resize();
+      });
+
+      ui.targetSaveBtn.addEventListener("click", () => {
+        void upsertTarget()
+          .then(() => loadStatus())
+          .then(() => loadLogs())
+          .then(() => setStatus("Target saved"))
+          .catch((error) => setStatus(`Target save error: ${error.message}`));
+      });
+
+      ui.targetDeleteBtn.addEventListener("click", () => {
+        void deleteTarget()
+          .then(() => loadStatus())
+          .then(() => loadLogs())
+          .then(() => setStatus("Target deleted"))
+          .catch((error) => setStatus(`Target delete error: ${error.message}`));
       });
 
       void bootstrap();

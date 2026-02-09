@@ -114,14 +114,18 @@ Set these repository secrets:
 - `DEPLOY_SSH_PRIVATE_KEY` - full private key (`~/.ssh/trackway_deploy`)
 - `DEPLOY_SSH_PORT` - optional, default `22`
 - `DEPLOY_SSH_KNOWN_HOSTS` - optional but recommended (`ssh-keyscan -H <host>`)
-- `TRACKWAY_CONFIG_YAML` - optional full runtime config YAML
+- `CLICKHOUSE_ADDR` - ClickHouse address for containers (default `clickhouse:9000`)
+- `CLICKHOUSE_DB` - ClickHouse database (default `trackway`)
+- `CLICKHOUSE_USER` - ClickHouse user (default `default`)
+- `CLICKHOUSE_PASSWORD` - ClickHouse password (recommended)
+- `TRACKWAY_CONFIG_JSON` or `TRACKWAY_CONFIG_JSON_B64` - optional runtime config as one-line JSON
+- `TRACKWAY_BIND_IP` - optional host bind IP for dashboard publish (default `127.0.0.1`)
+- `TRACKWAY_BIND_PORT` - optional host bind port for dashboard publish (default `8083`)
 
 GHCR login for build/push and deploy uses built-in `${{ secrets.GITHUB_TOKEN }}`.
 
 Legacy secret names are also accepted:
 - `SSH_HOST`, `SSH_USER`, `SSH_PRIVATE_KEY`, `SSH_PORT`, `SSH_KNOWN_HOSTS`
-
-ClickHouse credentials are taken from `/opt/trackway/config.yaml` (`storage.clickhouse.database`, `storage.clickhouse.username`, `storage.clickhouse.password`) at deploy time.
 
 Create `known_hosts` value:
 
@@ -145,16 +149,18 @@ chmod 644 /opt/trackway/config.yaml
 ```
 
 ### Option B: GitHub secret
-Set repo secret:
-- `TRACKWAY_CONFIG_YAML` = full YAML content.
+Set one of:
+- `TRACKWAY_CONFIG_JSON` = one-line JSON string.
+- `TRACKWAY_CONFIG_JSON_B64` = base64-encoded JSON string.
 
-Workflow will write it to `/opt/trackway/config.yaml` on each deploy.
+Runtime JSON is passed directly to container env (`TRACKWAY_CONFIG_JSON_B64`).
+If JSON is not set, workflow falls back to `/opt/trackway/config.yaml`.
 
 ## 7. Enable auto-deploy
 
 No extra scripts needed:
 - Push to `main` triggers `.github/workflows/ci-cd.yml`.
-- It runs tests, builds/pushes image to GHCR, uploads repo to `/opt/trackway` over SSH, creates ClickHouse backup, starts ClickHouse and waits for health, then pulls and starts `trackway`.
+- It runs tests, builds/pushes image to GHCR, uploads repo to `/opt/trackway` over SSH, creates ClickHouse backup, starts ClickHouse and waits for health, validates DB credentials, then pulls and starts `trackway`.
 
 First bootstrap deployment can be run manually:
 

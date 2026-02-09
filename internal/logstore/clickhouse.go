@@ -14,13 +14,15 @@ import (
 
 const (
 	defaultTableName    = "track_logs"
+	defaultTargetsTable = "track_targets"
 	defaultDialTimeout  = 5 * time.Second
 	defaultQueryTimeout = 5 * time.Second
 )
 
 type clickHouseBackend struct {
-	conn      clickhouse.Conn
-	tableName string
+	conn         clickhouse.Conn
+	tableName    string
+	targetsTable string
 }
 
 func newClickHouseBackend(options ClickHouseOptions) (*clickHouseBackend, error) {
@@ -118,8 +120,9 @@ func newClickHouseBackend(options ClickHouseOptions) (*clickHouseBackend, error)
 	}
 
 	backend := &clickHouseBackend{
-		conn:      conn,
-		tableName: table,
+		conn:         conn,
+		tableName:    table,
+		targetsTable: defaultTargetsTable,
 	}
 
 	if err := backend.initSchema(); err != nil {
@@ -132,7 +135,7 @@ func (c *clickHouseBackend) initSchema() error {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultQueryTimeout)
 	defer cancel()
 
-	query := fmt.Sprintf(`
+	logsQuery := fmt.Sprintf(`
 CREATE TABLE IF NOT EXISTS %s (
 	ts DateTime64(3, 'UTC'),
 	target String,
@@ -143,9 +146,24 @@ CREATE TABLE IF NOT EXISTS %s (
 ) ENGINE = MergeTree()
 ORDER BY (target, ts)
 `, c.tableName)
-	if err := c.conn.Exec(ctx, query); err != nil {
+	if err := c.conn.Exec(ctx, logsQuery); err != nil {
 		return fmt.Errorf("create clickhouse table: %w", err)
 	}
+
+	targetsQuery := fmt.Sprintf(`
+CREATE TABLE IF NOT EXISTS %s (
+	name String,
+	address String,
+	port UInt16,
+	enabled UInt8,
+	updated_at DateTime64(3, 'UTC')
+) ENGINE = MergeTree()
+ORDER BY (name, updated_at)
+`, c.targetsTable)
+	if err := c.conn.Exec(ctx, targetsQuery); err != nil {
+		return fmt.Errorf("create clickhouse targets table: %w", err)
+	}
+
 	return nil
 }
 
@@ -205,6 +223,92 @@ func (c *clickHouseBackend) readSince(targetName string, since time.Time, limit 
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].Timestamp < result[j].Timestamp })
 	return result
+}
+
+func (c *clickHouseBackend) listTargets() ([]Target, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	query := fmt.Sprintf(
+		`SELECT
+	name,
+	argMax(address, updated_at) AS address,
+	argMax(port, updated_at) AS port,
+	argMax(enabled, updated_at) AS enabled
+FROM %s
+GROUP BY name
+ORDER BY name`,
+		c.targetsTable,
+	)
+
+	rows, err := c.conn.Query(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make([]Target, 0, 32)
+	for rows.Next() {
+		var (
+			name    string
+			address string
+			port    uint16
+			enabled uint8
+		)
+		if err := rows.Scan(&name, &address, &port, &enabled); err != nil {
+			return nil, err
+		}
+		if enabled != 1 {
+			continue
+		}
+		result = append(result, Target{
+			Name:      name,
+			Address:   address,
+			Port:      int(port),
+			Enabled:   enabled == 1,
+			UpdatedAt: time.Time{},
+		})
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].Name < result[j].Name })
+	return result, nil
+}
+
+func (c *clickHouseBackend) upsertTarget(target Target) error {
+	ctx, cancel := context.WithTimeout(context.Background(), defaultQueryTimeout)
+	defer cancel()
+
+	query := fmt.Sprintf(
+		"INSERT INTO %s (name, address, port, enabled, updated_at) VALUES (?, ?, ?, ?, ?)",
+		c.targetsTable,
+	)
+	return c.conn.Exec(
+		ctx,
+		query,
+		target.Name,
+		target.Address,
+		uint16(target.Port),
+		uint8(1),
+		target.UpdatedAt.UTC(),
+	)
+}
+
+func (c *clickHouseBackend) deleteTarget(name string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), defaultQueryTimeout)
+	defer cancel()
+
+	query := fmt.Sprintf(
+		"INSERT INTO %s (name, address, port, enabled, updated_at) VALUES (?, ?, ?, ?, ?)",
+		c.targetsTable,
+	)
+	return c.conn.Exec(
+		ctx,
+		query,
+		name,
+		"",
+		uint16(0),
+		uint8(0),
+		time.Now().UTC(),
+	)
 }
 
 func sanitizeIdentifier(value string) string {

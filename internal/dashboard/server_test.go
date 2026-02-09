@@ -25,6 +25,49 @@ func (stubProvider) Logs(string, int, int) ([]logstore.Row, bool) {
 	return nil, false
 }
 
+func (stubProvider) UpsertTarget(string, string, int) error {
+	return nil
+}
+
+func (stubProvider) DeleteTarget(string) error {
+	return nil
+}
+
+type mutableProvider struct {
+	lastUpsert struct {
+		name    string
+		address string
+		port    int
+	}
+	lastDelete string
+}
+
+func (m *mutableProvider) Snapshot() tracker.Snapshot {
+	return tracker.Snapshot{
+		Targets: []tracker.TargetSnapshot{
+			{Name: "a", Address: "127.0.0.1", Port: 443, Status: "UP"},
+		},
+		Total: 1,
+		Up:    1,
+	}
+}
+
+func (m *mutableProvider) Logs(string, int, int) ([]logstore.Row, bool) {
+	return nil, false
+}
+
+func (m *mutableProvider) UpsertTarget(name, address string, port int) error {
+	m.lastUpsert.name = name
+	m.lastUpsert.address = address
+	m.lastUpsert.port = port
+	return nil
+}
+
+func (m *mutableProvider) DeleteTarget(name string) error {
+	m.lastDelete = name
+	return nil
+}
+
 func TestStaticHandlerServesIndexWithoutRedirect(t *testing.T) {
 	t.Parallel()
 
@@ -254,5 +297,54 @@ func TestFilterRowsByCutoff(t *testing.T) {
 	}
 	if got[1].Timestamp != "2026-02-09T12:00:00Z" {
 		t.Fatalf("unexpected second row timestamp: %s", got[1].Timestamp)
+	}
+}
+
+func TestTargetsAPIRequiresAuthAndSupportsMutations(t *testing.T) {
+	t.Parallel()
+
+	provider := &mutableProvider{}
+	srv, err := New(config.Dashboard{
+		ListenAddress: ":0",
+		PublicURL:     "http://127.0.0.1:8080",
+	}, "test-bot-token", provider)
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+
+	unauthReq := httptest.NewRequest(http.MethodGet, "/api/targets", nil)
+	unauthRec := httptest.NewRecorder()
+	srv.httpServer.Handler.ServeHTTP(unauthRec, unauthReq)
+	if unauthRec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected unauthorized for unauth request, got %d", unauthRec.Code)
+	}
+
+	sessionID, err := srv.auth.CreateSession(time.Now().UTC())
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	sessionCookie := &http.Cookie{Name: sessionCookieName, Value: sessionID}
+
+	postReq := httptest.NewRequest(http.MethodPost, "/api/targets", strings.NewReader(`{"name":"new-api","address":"100.64.0.10","port":443}`))
+	postReq.Header.Set("Content-Type", "application/json")
+	postReq.AddCookie(sessionCookie)
+	postRec := httptest.NewRecorder()
+	srv.httpServer.Handler.ServeHTTP(postRec, postReq)
+	if postRec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 on upsert, got %d body=%s", postRec.Code, postRec.Body.String())
+	}
+	if provider.lastUpsert.name != "new-api" || provider.lastUpsert.address != "100.64.0.10" || provider.lastUpsert.port != 443 {
+		t.Fatalf("upsert payload mismatch: %+v", provider.lastUpsert)
+	}
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/targets?name=new-api", nil)
+	deleteReq.AddCookie(sessionCookie)
+	deleteRec := httptest.NewRecorder()
+	srv.httpServer.Handler.ServeHTTP(deleteRec, deleteReq)
+	if deleteRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on delete, got %d body=%s", deleteRec.Code, deleteRec.Body.String())
+	}
+	if provider.lastDelete != "new-api" {
+		t.Fatalf("expected delete name new-api, got %q", provider.lastDelete)
 	}
 }

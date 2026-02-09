@@ -36,12 +36,27 @@ archive_name="clickhouse-${timestamp}.tar.gz"
 archive_path="${BACKUP_DIR}/${archive_name}"
 backup_container="trackway-ch-backup-${timestamp}"
 
+paused=0
+cleanup() {
+  if [ "${paused}" -eq 1 ]; then
+    docker unpause "${container_id}" >/dev/null 2>&1 || true
+  fi
+}
+trap cleanup EXIT
+
+# ClickHouse mutates parts during merges; pause container briefly for consistent tar backup.
+docker pause "${container_id}" >/dev/null
+paused=1
+
 docker run --rm \
   --name "${backup_container}" \
   -v "${volume_name}:/var/lib/clickhouse:ro" \
   -v "${BACKUP_DIR}:/backup" \
   alpine:3.20 \
   sh -euc "cd /var/lib/clickhouse && tar -czf /backup/${archive_name} ."
+
+docker unpause "${container_id}" >/dev/null
+paused=0
 
 sha256sum "${archive_path}" > "${archive_path}.sha256"
 echo "Backup created: ${archive_path}"

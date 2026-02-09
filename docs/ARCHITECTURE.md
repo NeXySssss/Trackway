@@ -41,6 +41,7 @@ Concrete runtime adapters:
 ## 4. Responsibilities
 ### `MonitorEngine`
 - Owns in-memory target state.
+- Syncs target definitions from storage (`track_targets`) before checks.
 - Executes checks and writes log rows (`INIT`, `CHANGE`, `POLL`).
 - Exposes read model: `Snapshot()` and `Logs(...)`.
 

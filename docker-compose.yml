@@ -34,8 +34,14 @@ services:
       - /tmp
     environment:
       CONFIG_PATH: /app/config.yaml
+      CLICKHOUSE_ADDR: "${CLICKHOUSE_ADDR:-clickhouse:9000}"
+      CLICKHOUSE_DATABASE: "${CLICKHOUSE_DB:-trackway}"
+      CLICKHOUSE_USERNAME: "${CLICKHOUSE_USER:-default}"
+      CLICKHOUSE_PASSWORD: "${CLICKHOUSE_PASSWORD:-}"
+      TRACKWAY_CONFIG_JSON: "${TRACKWAY_CONFIG_JSON:-}"
+      TRACKWAY_CONFIG_JSON_B64: "${TRACKWAY_CONFIG_JSON_B64:-}"
     ports:
-      - "100.68.32.37:8083:8080"
+      - "${TRACKWAY_BIND_IP:-127.0.0.1}:${TRACKWAY_BIND_PORT:-8083}:8080"
     volumes:
       - "${TRACKWAY_CONFIG_PATH:-./config.yaml}:/app/config.yaml:ro"
     networks:

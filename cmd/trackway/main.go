@@ -45,6 +45,10 @@ func main() {
 		fmt.Println("storage init error:", err)
 		os.Exit(1)
 	}
+	if err := seedTargets(store, cfg.Targets); err != nil {
+		fmt.Println("targets init error:", err)
+		os.Exit(1)
+	}
 
 	updates := make(chan *models.Update, 128)
 	client, err := telegram.New(cfg.Bot.Token, cfg.Bot.ChatID, func(ctx context.Context, update *models.Update) {
@@ -122,4 +126,24 @@ func sendStatus(client *telegram.Client, message string) {
 	if err := client.SendDefaultHTML(sendCtx, message); err != nil {
 		fmt.Println("status message error:", err)
 	}
+}
+
+func seedTargets(store *logstore.Store, targets []config.Target) error {
+	if len(targets) == 0 {
+		return nil
+	}
+	existing, err := store.ListTargets()
+	if err != nil {
+		return err
+	}
+	if len(existing) > 0 {
+		return nil
+	}
+	for _, target := range targets {
+		if err := store.UpsertTarget(target.Name, target.Address, target.Port); err != nil {
+			return err
+		}
+	}
+	slog.Info("seeded targets from config", "count", len(targets))
+	return nil
 }

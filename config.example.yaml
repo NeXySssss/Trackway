@@ -22,12 +22,14 @@ storage:
 dashboard:
   enabled: true
   listen_address: ":8080"
-  public_url: "https://xdd.рф"
+  public_url: "https://s2-lt.nexy.one"
   auth_token_ttl_seconds: 300
   secure_cookie: true
   mini_app_enabled: true
   mini_app_max_age_seconds: 86400
 
+# Optional bootstrap targets.
+# If DB table `track_targets` is empty on first start, these will be inserted once.
 targets:
   - name: "track-ssh"
     address: "100.64.0.10"

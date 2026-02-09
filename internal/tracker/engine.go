@@ -2,10 +2,13 @@ package tracker
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -17,9 +20,9 @@ type MonitorEngine struct {
 	logs   *logstore.Store
 	logger *slog.Logger
 
-	interval     time.Duration
-	timeout      time.Duration
-	checkWorkers int
+	interval    time.Duration
+	timeout     time.Duration
+	maxParallel int
 
 	mu           sync.RWMutex
 	targets      []*TargetState
@@ -27,7 +30,7 @@ type MonitorEngine struct {
 }
 
 func NewMonitorEngine(cfg config.Config, logs *logstore.Store) *MonitorEngine {
-	targets := buildTargets(cfg.Targets)
+	targets := buildTargetsFromConfig(cfg.Targets)
 	byName := make(map[string]*TargetState, len(targets))
 	for _, target := range targets {
 		byName[target.Name] = target
@@ -38,7 +41,7 @@ func NewMonitorEngine(cfg config.Config, logs *logstore.Store) *MonitorEngine {
 		logger:       slog.Default(),
 		interval:     defaultSeconds(cfg.Monitoring.IntervalSeconds, 5),
 		timeout:      defaultSeconds(cfg.Monitoring.ConnectTimeoutSeconds, 2),
-		checkWorkers: defaultWorkers(cfg.Monitoring.MaxParallelChecks, len(targets)),
+		maxParallel:  cfg.Monitoring.MaxParallelChecks,
 		targets:      targets,
 		targetByName: byName,
 	}
@@ -62,20 +65,23 @@ func (e *MonitorEngine) Run(ctx context.Context, onEvents func([]alertEvent)) {
 }
 
 func (e *MonitorEngine) runChecks(ctx context.Context, onEvents func([]alertEvent)) {
-	if len(e.targets) == 0 {
+	e.syncTargets()
+
+	e.mu.RLock()
+	targets := append([]*TargetState(nil), e.targets...)
+	e.mu.RUnlock()
+
+	if len(targets) == 0 {
 		return
 	}
 
-	workers := e.checkWorkers
-	if workers > len(e.targets) {
-		workers = len(e.targets)
-	}
+	workers := defaultWorkers(e.maxParallel, len(targets))
 
 	sem := make(chan struct{}, workers)
-	eventsCh := make(chan alertEvent, len(e.targets))
+	eventsCh := make(chan alertEvent, len(targets))
 	var wg sync.WaitGroup
 
-	for _, target := range e.targets {
+	for _, target := range targets {
 		if ctx.Err() != nil {
 			break
 		}
@@ -224,7 +230,77 @@ func (e *MonitorEngine) Logs(trackName string, days int, limit int) ([]logstore.
 	return e.logs.ReadLastDays(target.Name, days, limit), true
 }
 
-func buildTargets(items []config.Target) []*TargetState {
+func (e *MonitorEngine) UpsertTarget(name, address string, port int) error {
+	name = strings.TrimSpace(name)
+	address = strings.TrimSpace(address)
+	if name == "" {
+		return errors.New("target name is required")
+	}
+	if address == "" {
+		return errors.New("target address is required")
+	}
+	if port <= 0 || port > 65535 {
+		return fmt.Errorf("target port must be between 1 and 65535, got %d", port)
+	}
+	if err := e.logs.UpsertTarget(name, address, port); err != nil {
+		return err
+	}
+	e.syncTargets()
+	return nil
+}
+
+func (e *MonitorEngine) DeleteTarget(name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return errors.New("target name is required")
+	}
+	if err := e.logs.DeleteTarget(name); err != nil {
+		return err
+	}
+	e.syncTargets()
+	return nil
+}
+
+func (e *MonitorEngine) syncTargets() {
+	targetRows, err := e.logs.ListTargets()
+	if err != nil {
+		e.logger.Warn("failed to load targets from store", "error", err)
+		return
+	}
+
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	nextTargets := make([]*TargetState, 0, len(targetRows))
+	nextByName := make(map[string]*TargetState, len(targetRows))
+	for _, row := range targetRows {
+		if !row.Enabled || row.Name == "" || row.Address == "" || row.Port <= 0 {
+			continue
+		}
+
+		target := &TargetState{
+			Name:    row.Name,
+			Address: row.Address,
+			Port:    row.Port,
+		}
+		if previous := e.targetByName[row.Name]; previous != nil {
+			if previous.Address == row.Address && previous.Port == row.Port {
+				target.LastStatus = previous.LastStatus
+				target.LastChanged = previous.LastChanged
+				target.LastChecked = previous.LastChecked
+			}
+		}
+
+		nextTargets = append(nextTargets, target)
+		nextByName[target.Name] = target
+	}
+
+	sort.Slice(nextTargets, func(i, j int) bool { return nextTargets[i].Name < nextTargets[j].Name })
+	e.targets = nextTargets
+	e.targetByName = nextByName
+}
+
+func buildTargetsFromConfig(items []config.Target) []*TargetState {
 	out := make([]*TargetState, 0, len(items))
 	for _, item := range items {
 		out = append(out, &TargetState{

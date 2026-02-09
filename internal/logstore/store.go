@@ -24,6 +24,14 @@ type Store struct {
 	backend backend
 }
 
+type Target struct {
+	Name      string    `json:"name"`
+	Address   string    `json:"address"`
+	Port      int       `json:"port"`
+	Enabled   bool      `json:"enabled"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
 type Row struct {
 	Timestamp string `json:"timestamp"`
 	Status    string `json:"status"`
@@ -34,6 +42,9 @@ type Row struct {
 type backend interface {
 	append(targetName, address string, port int, status bool, reason string, at time.Time) error
 	readSince(targetName string, since time.Time, limit int) []Row
+	listTargets() ([]Target, error)
+	upsertTarget(target Target) error
+	deleteTarget(name string) error
 }
 
 func New(_ string) (*Store, error) {
@@ -45,6 +56,7 @@ func NewMemory() (*Store, error) {
 	return &Store{
 		backend: &memoryBackend{
 			rowsByTrack: make(map[string][]Row),
+			targets:     make(map[string]Target),
 		},
 	}, nil
 }
@@ -83,9 +95,28 @@ func (s *Store) ReadLastHours(targetName string, hours int, limit int) []Row {
 	return s.backend.readSince(targetName, cutoff, limit)
 }
 
+func (s *Store) ListTargets() ([]Target, error) {
+	return s.backend.listTargets()
+}
+
+func (s *Store) UpsertTarget(name, address string, port int) error {
+	return s.backend.upsertTarget(Target{
+		Name:      strings.TrimSpace(name),
+		Address:   strings.TrimSpace(address),
+		Port:      port,
+		Enabled:   true,
+		UpdatedAt: time.Now().UTC(),
+	})
+}
+
+func (s *Store) DeleteTarget(name string) error {
+	return s.backend.deleteTarget(strings.TrimSpace(name))
+}
+
 type memoryBackend struct {
 	mu          sync.RWMutex
 	rowsByTrack map[string][]Row
+	targets     map[string]Target
 }
 
 func (m *memoryBackend) append(targetName, address string, port int, status bool, reason string, at time.Time) error {
@@ -127,6 +158,41 @@ func (m *memoryBackend) readSince(targetName string, since time.Time, limit int)
 		return filtered[len(filtered)-limit:]
 	}
 	return filtered
+}
+
+func (m *memoryBackend) listTargets() ([]Target, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	out := make([]Target, 0, len(m.targets))
+	for _, target := range m.targets {
+		if !target.Enabled {
+			continue
+		}
+		out = append(out, target)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, nil
+}
+
+func (m *memoryBackend) upsertTarget(target Target) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	target.Name = strings.TrimSpace(target.Name)
+	target.Address = strings.TrimSpace(target.Address)
+	target.Enabled = true
+	target.UpdatedAt = target.UpdatedAt.UTC()
+
+	m.targets[target.Name] = target
+	return nil
+}
+
+func (m *memoryBackend) deleteTarget(name string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.targets, strings.TrimSpace(name))
+	return nil
 }
 
 func statusText(value bool) string {

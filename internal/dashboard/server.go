@@ -32,6 +32,8 @@ var staticFiles embed.FS
 type DataProvider interface {
 	Snapshot() tracker.Snapshot
 	Logs(trackName string, days int, limit int) ([]logstore.Row, bool)
+	UpsertTarget(name, address string, port int) error
+	DeleteTarget(name string) error
 }
 
 type Server struct {
@@ -82,6 +84,7 @@ func New(cfg config.Dashboard, botToken string, provider DataProvider) (*Server,
 	mux.HandleFunc("/api/auth/telegram-miniapp", srv.handleTelegramMiniAppAuth)
 	mux.HandleFunc("/api/status", srv.requireAuth(srv.handleStatus))
 	mux.HandleFunc("/api/logs", srv.requireAuth(srv.handleLogs))
+	mux.HandleFunc("/api/targets", srv.requireAuth(srv.handleTargets))
 	mux.Handle("/", srv.staticHandler())
 
 	srv.httpServer = &http.Server{
@@ -255,25 +258,13 @@ func (s *Server) handleAuthSession(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {
 	snapshot := s.provider.Snapshot()
-	targets := make([]map[string]any, 0, len(snapshot.Targets))
-	for _, target := range snapshot.Targets {
-		targets = append(targets, map[string]any{
-			"name":         target.Name,
-			"address":      target.Address,
-			"port":         target.Port,
-			"status":       target.Status,
-			"last_changed": util.FormatTime(target.LastChanged),
-			"last_checked": util.FormatTime(target.LastChecked),
-		})
-	}
-
 	writeJSON(w, http.StatusOK, map[string]any{
 		"generated_at": snapshot.GeneratedAt.Format(time.RFC3339),
 		"total":        snapshot.Total,
 		"up":           snapshot.Up,
 		"down":         snapshot.Down,
 		"unknown":      snapshot.Unknown,
-		"targets":      targets,
+		"targets":      snapshotTargets(snapshot),
 	})
 }
 
@@ -326,6 +317,60 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 		"text":   strings.Join(lines, "\n"),
 		"format": "DD.MM.YYYY HH:mm:ss",
 	})
+}
+
+func (s *Server) handleTargets(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		snapshot := s.provider.Snapshot()
+		writeJSON(w, http.StatusOK, map[string]any{
+			"targets": snapshotTargets(snapshot),
+		})
+		return
+	case http.MethodPost:
+		var payload struct {
+			Name    string `json:"name"`
+			Address string `json:"address"`
+			Port    int    `json:"port"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]any{
+				"error": "invalid json body",
+			})
+			return
+		}
+		if err := s.provider.UpsertTarget(payload.Name, payload.Address, payload.Port); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]any{
+				"error": err.Error(),
+			})
+			return
+		}
+		writeJSON(w, http.StatusCreated, map[string]any{
+			"ok": true,
+		})
+		return
+	case http.MethodDelete:
+		name := strings.TrimSpace(r.URL.Query().Get("name"))
+		if name == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]any{
+				"error": "name is required",
+			})
+			return
+		}
+		if err := s.provider.DeleteTarget(name); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]any{
+				"error": err.Error(),
+			})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok": true,
+		})
+		return
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 }
 
 func (s *Server) handleTelegramMiniAppAuth(w http.ResponseWriter, r *http.Request) {
@@ -496,4 +541,19 @@ func formatRowLine(row logstore.Row, loc *time.Location) string {
 		timestamp = ts.In(loc).Format("02.01.2006 15:04:05")
 	}
 	return timestamp + "  " + row.Status + "  " + row.Endpoint + "  " + row.Reason
+}
+
+func snapshotTargets(snapshot tracker.Snapshot) []map[string]any {
+	targets := make([]map[string]any, 0, len(snapshot.Targets))
+	for _, target := range snapshot.Targets {
+		targets = append(targets, map[string]any{
+			"name":         target.Name,
+			"address":      target.Address,
+			"port":         target.Port,
+			"status":       target.Status,
+			"last_changed": util.FormatTime(target.LastChanged),
+			"last_checked": util.FormatTime(target.LastChecked),
+		})
+	}
+	return targets
 }
