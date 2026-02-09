@@ -6,9 +6,9 @@ services:
     container_name: trackway-clickhouse
     restart: unless-stopped
     environment:
-      CLICKHOUSE_DB: trackway
-      CLICKHOUSE_USER: default
-      CLICKHOUSE_PASSWORD: ""
+      CLICKHOUSE_DB: "${CLICKHOUSE_DB:-trackway}"
+      CLICKHOUSE_USER: "${CLICKHOUSE_USER:-default}"
+      CLICKHOUSE_PASSWORD: "${CLICKHOUSE_PASSWORD:-}"
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
     volumes:
       - clickhouse-data:/var/lib/clickhouse
