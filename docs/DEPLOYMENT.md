@@ -118,6 +118,9 @@ Set these repository secrets:
 
 GHCR login for build/push and deploy uses built-in `${{ secrets.GITHUB_TOKEN }}`.
 
+Legacy secret names are also accepted:
+- `SSH_HOST`, `SSH_USER`, `SSH_PRIVATE_KEY`, `SSH_PORT`, `SSH_KNOWN_HOSTS`
+
 Create `known_hosts` value:
 
 ```bash

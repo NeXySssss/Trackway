@@ -117,6 +117,7 @@ Quick 502 checklist:
 - Nightly ClickHouse backup: `.github/workflows/clickhouse-backup.yml`
 - Full Debian 13 setup guide: `docs/DEPLOYMENT.md`
 - SSH secrets for deploy: `DEPLOY_SSH_HOST`, `DEPLOY_SSH_USER`, `DEPLOY_SSH_PRIVATE_KEY` (and optional `DEPLOY_SSH_PORT`, `DEPLOY_SSH_KNOWN_HOSTS`)
+- Legacy SSH secret aliases also work: `SSH_HOST`, `SSH_USER`, `SSH_PRIVATE_KEY`, `SSH_PORT`, `SSH_KNOWN_HOSTS`
 - GHCR auth uses built-in `GITHUB_TOKEN` from GitHub Actions
 
 ## Frontend build
