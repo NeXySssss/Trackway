@@ -14,6 +14,7 @@ import (
 	"github.com/go-telegram/bot/models"
 
 	"trackway/internal/config"
+	"trackway/internal/dashboard"
 	"trackway/internal/logstore"
 	"trackway/internal/telegram"
 	"trackway/internal/tracker"
@@ -55,6 +56,15 @@ func main() {
 		os.Exit(1)
 	}
 	svc := tracker.New(cfg, store, client)
+	var dash *dashboard.Server
+	if cfg.Dashboard.Enabled {
+		dash, err = dashboard.New(cfg.Dashboard, svc)
+		if err != nil {
+			fmt.Println("dashboard init error:", err)
+			os.Exit(1)
+		}
+		svc.SetAuthLinkGenerator(dash.NewAuthLink)
+	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
@@ -77,6 +87,16 @@ func main() {
 			}
 		}
 	}()
+	if dash != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := dash.ListenAndServe(ctx); err != nil {
+				slog.Error("dashboard server failed", "error", err)
+				cancel()
+			}
+		}()
+	}
 
 	sendStatus(client, "<b>INFO</b>\nport tracker started (Go)")
 	client.Start(ctx)

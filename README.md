@@ -10,16 +10,25 @@ Uses latest deps in this repo:
 - Monitor `address:port` targets on interval.
 - Telegram alerts on `DOWN` and `RECOVERED` (batched per check cycle).
 - If a `state-change` DOWN recovers within 30s, the original DOWN message is edited to `DOWN -> RECOVERED`.
-- Commands: `/start`, `/list`, `/status`, `/logs <track>`.
+- Commands: `/start`, `/list`, `/status`, `/logs <track>`, `/authme`.
 - Per-track logs, filtered by last 7 days in `/logs`.
+- Built-in web dashboard with:
+  - live status table for all tracks
+  - charts (snapshot distribution + per-track timeline from logs)
+  - light/dark theme toggle
+  - full logs view per track
+  - Telegram-issued browser auth links (`/authme`)
+  - session cookie that expires on browser restart or after 24h
 
 ## Project layout
 - `cmd/trackway/main.go` - entrypoint and wiring.
 - `internal/config` - config parsing and validation.
 - `internal/telegram` - Telegram client adapter.
-- `internal/tracker` - monitoring + bot command handlers.
+- `internal/tracker` - monitor engine + alert orchestration + bot commands.
+- `internal/dashboard` - HTTP server, auth flow, dashboard API and Astro UI assets.
 - `internal/logstore` - append/read logs by track.
 - `internal/util` - shared text/time helpers.
+- `docs/ARCHITECTURE.md` - module map, dependency direction and extension rules.
 
 ## Config
 `config.yaml` format:
@@ -34,11 +43,31 @@ monitoring:
   max_parallel_checks: 16
 storage:
   log_dir: "logs"
+dashboard:
+  enabled: true
+  listen_address: ":8080"
+  public_url: "http://127.0.0.1:8080"
+  auth_token_ttl_seconds: 300
+  secure_cookie: false
 targets:
   - name: "track-ssh"
     address: "100.64.0.10"
     port: 22
 ```
+
+`dashboard.public_url` is used in `/authme` links.
+Use a public HTTPS URL in production and set `secure_cookie: true`.
+
+Log reasons:
+- `INIT` - first check after service start
+- `CHANGE` - state changed (`UP <-> DOWN`)
+- `POLL` - regular check without state change
+
+## Dashboard auth flow
+1. Send `/authme` to the bot from `bot.chat_id`.
+2. Open the link from bot message.
+3. Browser receives a session cookie and is redirected to dashboard `/`.
+4. Session ends on browser restart (session cookie) or after 24h (server-side TTL), whichever comes first.
 
 ## Local run
 ```powershell
@@ -56,6 +85,7 @@ Compose config in `docker-compose.yml`:
 - writable logs only via named volume `trackway-data:/data/logs`
 - config mounted read-only `./config.yaml:/app/config.yaml:ro`
 - runtime user is `root` to avoid host/volume UID permission issues
+- dashboard published on `http://localhost:8080`
 
 ## Stop
 ```powershell
@@ -70,3 +100,11 @@ go build ./...
 ```
 
 `max_parallel_checks` controls how many targets are probed concurrently in each cycle.
+
+To rebuild Astro assets after UI edits:
+
+```powershell
+cd internal/dashboard/frontend
+npm install
+npm run build
+```

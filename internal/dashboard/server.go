@@ -1,0 +1,353 @@
+package dashboard
+
+import (
+	"context"
+	"embed"
+	"encoding/json"
+	"errors"
+	"io/fs"
+	"log/slog"
+	"net/http"
+	"net/url"
+	"path"
+	"strconv"
+	"strings"
+	"time"
+
+	"trackway/internal/config"
+	"trackway/internal/logstore"
+	"trackway/internal/tracker"
+	"trackway/internal/util"
+)
+
+const (
+	sessionCookieName = "trackway_dashboard_session"
+	sessionMaxAge     = 24 * time.Hour
+)
+
+//go:embed all:frontend/dist
+var staticFiles embed.FS
+
+type DataProvider interface {
+	Snapshot() tracker.Snapshot
+	Logs(trackName string, days int, limit int) ([]logstore.Row, bool)
+}
+
+type Server struct {
+	logger       *slog.Logger
+	provider     DataProvider
+	auth         *authManager
+	listenAddr   string
+	publicURL    string
+	secureCookie bool
+	static       fs.FS
+	httpServer   *http.Server
+}
+
+func New(cfg config.Dashboard, provider DataProvider) (*Server, error) {
+	if provider == nil {
+		return nil, errors.New("dashboard data provider is required")
+	}
+
+	staticFS, err := fs.Sub(staticFiles, "frontend/dist")
+	if err != nil {
+		return nil, err
+	}
+
+	tokenTTL := time.Duration(cfg.AuthTokenTTLSeconds) * time.Second
+	if tokenTTL <= 0 {
+		tokenTTL = 5 * time.Minute
+	}
+
+	srv := &Server{
+		logger:       slog.Default(),
+		provider:     provider,
+		auth:         newAuthManager(tokenTTL, sessionMaxAge),
+		listenAddr:   cfg.ListenAddress,
+		publicURL:    strings.TrimRight(cfg.PublicURL, "/"),
+		secureCookie: cfg.SecureCookie,
+		static:       staticFS,
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/auth/verify", srv.handleAuthVerify)
+	mux.HandleFunc("/auth/logout", srv.handleAuthLogout)
+	mux.HandleFunc("/api/auth/session", srv.handleAuthSession)
+	mux.HandleFunc("/api/status", srv.requireAuth(srv.handleStatus))
+	mux.HandleFunc("/api/logs", srv.requireAuth(srv.handleLogs))
+	mux.Handle("/", srv.staticHandler())
+
+	srv.httpServer = &http.Server{
+		Addr:    srv.listenAddr,
+		Handler: mux,
+	}
+	return srv, nil
+}
+
+func (s *Server) ListenAndServe(ctx context.Context) error {
+	shutdownDone := make(chan struct{})
+	go func() {
+		defer close(shutdownDone)
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = s.httpServer.Shutdown(shutdownCtx)
+	}()
+
+	s.logger.Info("dashboard listening", "addr", s.listenAddr)
+	err := s.httpServer.ListenAndServe()
+	<-shutdownDone
+	if err == nil || errors.Is(err, http.ErrServerClosed) {
+		return nil
+	}
+	return err
+}
+
+func (s *Server) NewAuthLink() (string, error) {
+	if s.publicURL == "" {
+		return "", errors.New("dashboard.public_url is empty")
+	}
+	token, err := s.auth.IssueToken(time.Now().UTC())
+	if err != nil {
+		return "", err
+	}
+
+	link, err := url.Parse(s.publicURL + "/auth/verify")
+	if err != nil {
+		return "", err
+	}
+	q := link.Query()
+	q.Set("token", token)
+	link.RawQuery = q.Encode()
+	return link.String(), nil
+}
+
+func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		now := time.Now().UTC()
+		sessionID, ok := s.sessionIDFromRequest(r)
+		if !ok {
+			writeJSON(w, http.StatusUnauthorized, map[string]any{
+				"authorized": false,
+				"error":      "not authorized",
+			})
+			return
+		}
+		expiresAt, ok := s.auth.Session(now, sessionID)
+		if !ok {
+			s.expireCookie(w)
+			writeJSON(w, http.StatusUnauthorized, map[string]any{
+				"authorized": false,
+				"error":      "session expired",
+			})
+			return
+		}
+		w.Header().Set("X-Session-Expires-At", expiresAt.Format(time.RFC3339))
+		next(w, r)
+	}
+}
+
+func (s *Server) handleAuthVerify(w http.ResponseWriter, r *http.Request) {
+	token := strings.TrimSpace(r.URL.Query().Get("token"))
+	if token == "" {
+		http.Error(w, "missing token", http.StatusBadRequest)
+		return
+	}
+
+	now := time.Now().UTC()
+	sessionID, ok := s.auth.ConsumeToken(now, token)
+	if !ok {
+		http.Error(w, "token is invalid or expired", http.StatusUnauthorized)
+		return
+	}
+
+	s.setSessionCookie(w, sessionID)
+	http.Redirect(w, r, "/", http.StatusFound)
+}
+
+func (s *Server) handleAuthLogout(w http.ResponseWriter, r *http.Request) {
+	sessionID, ok := s.sessionIDFromRequest(r)
+	if ok {
+		s.auth.RevokeSession(sessionID)
+	}
+	s.expireCookie(w)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok": true,
+	})
+}
+
+func (s *Server) handleAuthSession(w http.ResponseWriter, r *http.Request) {
+	now := time.Now().UTC()
+	sessionID, ok := s.sessionIDFromRequest(r)
+	if !ok {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{
+			"authorized": false,
+		})
+		return
+	}
+
+	expiresAt, ok := s.auth.Session(now, sessionID)
+	if !ok {
+		s.expireCookie(w)
+		writeJSON(w, http.StatusUnauthorized, map[string]any{
+			"authorized": false,
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"authorized": true,
+		"expires_at": expiresAt.Format(time.RFC3339),
+	})
+}
+
+func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {
+	snapshot := s.provider.Snapshot()
+	targets := make([]map[string]any, 0, len(snapshot.Targets))
+	for _, target := range snapshot.Targets {
+		targets = append(targets, map[string]any{
+			"name":         target.Name,
+			"address":      target.Address,
+			"port":         target.Port,
+			"status":       target.Status,
+			"last_changed": util.FormatTime(target.LastChanged),
+			"last_checked": util.FormatTime(target.LastChecked),
+		})
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"generated_at": snapshot.GeneratedAt.Format(time.RFC3339),
+		"total":        snapshot.Total,
+		"up":           snapshot.Up,
+		"down":         snapshot.Down,
+		"unknown":      snapshot.Unknown,
+		"targets":      targets,
+	})
+}
+
+func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
+	track := strings.TrimSpace(r.URL.Query().Get("track"))
+	if track == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{
+			"error": "track is required",
+		})
+		return
+	}
+
+	days := parseQueryInt(r, "days", 7, 1, 365)
+	limit := parseQueryInt(r, "limit", 1000, 1, 5000)
+	rows, ok := s.provider.Logs(track, days, limit)
+	if !ok {
+		writeJSON(w, http.StatusNotFound, map[string]any{
+			"error": "track not found",
+		})
+		return
+	}
+
+	lines := make([]string, 0, len(rows))
+	for _, row := range rows {
+		lines = append(lines, row.Timestamp+"  "+row.Status+"  "+row.Endpoint+"  "+row.Reason)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"track": track,
+		"days":  days,
+		"limit": limit,
+		"rows":  rows,
+		"text":  strings.Join(lines, "\n"),
+	})
+}
+
+func parseQueryInt(r *http.Request, key string, fallback, min, max int) int {
+	value := strings.TrimSpace(r.URL.Query().Get(key))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return fallback
+	}
+	if parsed < min {
+		return min
+	}
+	if parsed > max {
+		return max
+	}
+	return parsed
+}
+
+func (s *Server) sessionIDFromRequest(r *http.Request) (string, bool) {
+	cookie, err := r.Cookie(sessionCookieName)
+	if err != nil {
+		return "", false
+	}
+	value := strings.TrimSpace(cookie.Value)
+	if value == "" {
+		return "", false
+	}
+	return value, true
+}
+
+func (s *Server) setSessionCookie(w http.ResponseWriter, sessionID string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookieName,
+		Value:    sessionID,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   s.secureCookie,
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+func (s *Server) expireCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookieName,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   s.secureCookie,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   -1,
+		Expires:  time.Unix(0, 0),
+	})
+}
+
+func (s *Server) staticHandler() http.Handler {
+	fileServer := http.FileServer(http.FS(s.static))
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/auth/") {
+			http.NotFound(w, r)
+			return
+		}
+
+		cleanPath := path.Clean(strings.TrimPrefix(r.URL.Path, "/"))
+		if cleanPath == "." || cleanPath == "/" {
+			cleanPath = "index.html"
+		}
+		if _, err := fs.Stat(s.static, cleanPath); err != nil {
+			cleanPath = "index.html"
+		}
+		if cleanPath == "index.html" {
+			indexBytes, err := fs.ReadFile(s.static, "index.html")
+			if err != nil {
+				http.Error(w, "dashboard index not found", http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(indexBytes)
+			return
+		}
+
+		r2 := r.Clone(r.Context())
+		r2.URL.Path = "/" + cleanPath
+		fileServer.ServeHTTP(w, r2)
+	})
+}
+
+func writeJSON(w http.ResponseWriter, status int, value any) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(value)
+}

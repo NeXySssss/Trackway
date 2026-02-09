@@ -10,6 +10,13 @@ monitoring:
 storage:
   log_dir: "logs"
 
+dashboard:
+  enabled: true
+  listen_address: ":8080"
+  public_url: "http://127.0.0.1:8080"
+  auth_token_ttl_seconds: 300
+  secure_cookie: false
+
 targets:
   - name: "track-ssh"
     address: "100.64.0.10"

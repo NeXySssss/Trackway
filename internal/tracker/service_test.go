@@ -91,10 +91,10 @@ func TestApplyStatusTransitions(t *testing.T) {
 	}
 
 	rows := store.ReadLastDays(target.Name, 7, 100)
-	if len(rows) != 2 {
-		t.Fatalf("expected 2 log rows (INIT+CHANGE), got %d", len(rows))
+	if len(rows) != 3 {
+		t.Fatalf("expected 3 log rows (INIT+POLL+CHANGE), got %d", len(rows))
 	}
-	if rows[0].Reason != "INIT" || rows[1].Reason != "CHANGE" {
+	if rows[0].Reason != "INIT" || rows[1].Reason != "POLL" || rows[2].Reason != "CHANGE" {
 		t.Fatalf("unexpected reasons: %+v", rows)
 	}
 }
@@ -256,6 +256,44 @@ func TestLogsMessagesChunking(t *testing.T) {
 		if !strings.Contains(msg, "<pre>") {
 			t.Fatalf("message %d must contain <pre> block", i)
 		}
+	}
+}
+
+func TestAuthLinkText(t *testing.T) {
+	t.Parallel()
+
+	store, err := logstore.New(t.TempDir())
+	if err != nil {
+		t.Fatalf("logstore init error: %v", err)
+	}
+	svc := New(testConfig(), store, &fakeNotifier{})
+	svc.SetAuthLinkGenerator(func() (string, error) {
+		return "https://example.com/auth/verify?token=abc", nil
+	})
+
+	text := svc.authLinkText(1)
+	if !strings.Contains(text, "https://example.com/auth/verify?token=abc") {
+		t.Fatalf("expected auth link in response, got %q", text)
+	}
+}
+
+func TestAuthLinkTextChatRestricted(t *testing.T) {
+	t.Parallel()
+
+	store, err := logstore.New(t.TempDir())
+	if err != nil {
+		t.Fatalf("logstore init error: %v", err)
+	}
+	cfg := testConfig()
+	cfg.Bot.ChatID = 100
+	svc := New(cfg, store, &fakeNotifier{})
+	svc.SetAuthLinkGenerator(func() (string, error) {
+		return "https://example.com/auth/verify?token=abc", nil
+	})
+
+	text := svc.authLinkText(200)
+	if !strings.Contains(strings.ToLower(text), "not available") {
+		t.Fatalf("expected restricted chat response, got %q", text)
 	}
 }
 

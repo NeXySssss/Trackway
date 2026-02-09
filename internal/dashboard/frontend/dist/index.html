@@ -1,0 +1,436 @@
+<!DOCTYPE html><html lang="en" data-astro-cid-j7pv25f6> <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Trackway Dashboard</title><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Chivo:wght@400;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet"><link rel="stylesheet" href="/_astro/index.D491bXxx.css"></head> <body data-astro-cid-j7pv25f6> <main class="dashboard" data-astro-cid-j7pv25f6> <section class="hero" data-astro-cid-j7pv25f6> <div class="hero-top" data-astro-cid-j7pv25f6> <div data-astro-cid-j7pv25f6> <h1 data-astro-cid-j7pv25f6>Trackway Dashboard</h1> <p class="subtitle" data-astro-cid-j7pv25f6>TCP statuses, downtime timeline and full track logs.</p> </div> <div class="actions" data-astro-cid-j7pv25f6> <button id="theme-toggle-btn" class="btn-ghost" type="button" data-astro-cid-j7pv25f6>Theme</button> <button id="refresh-status-btn" class="btn-primary" type="button" data-astro-cid-j7pv25f6>Refresh</button> <button id="logout-btn" class="btn-danger" type="button" data-astro-cid-j7pv25f6>Logout</button> </div> </div> <div class="meta" data-astro-cid-j7pv25f6> <span class="chip" data-astro-cid-j7pv25f6>Total <strong id="summary-total" data-astro-cid-j7pv25f6>0</strong></span> <span class="chip" data-astro-cid-j7pv25f6>UP <strong id="summary-up" data-astro-cid-j7pv25f6>0</strong></span> <span class="chip" data-astro-cid-j7pv25f6>DOWN <strong id="summary-down" data-astro-cid-j7pv25f6>0</strong></span> <span class="chip" data-astro-cid-j7pv25f6>UNKNOWN <strong id="summary-unknown" data-astro-cid-j7pv25f6>0</strong></span> <span class="chip" data-astro-cid-j7pv25f6>Session expires <strong id="session-expiry" data-astro-cid-j7pv25f6>-</strong></span> <span class="chip" data-astro-cid-j7pv25f6>Snapshot <strong id="snapshot-time" data-astro-cid-j7pv25f6>-</strong></span> </div> </section> <section class="panel" data-astro-cid-j7pv25f6> <h2 data-astro-cid-j7pv25f6>Charts</h2> <div class="charts-grid" data-astro-cid-j7pv25f6> <article class="chart-card" data-astro-cid-j7pv25f6> <h3 data-astro-cid-j7pv25f6>Current Snapshot (all tracks)</h3> <canvas id="overview-chart" width="960" height="160" data-astro-cid-j7pv25f6></canvas> <p id="overview-caption" class="chart-caption" data-astro-cid-j7pv25f6>No data</p> </article> <article class="chart-card" data-astro-cid-j7pv25f6> <h3 data-astro-cid-j7pv25f6>Track Timeline (from logs)</h3> <canvas id="timeline-chart" width="960" height="160" data-astro-cid-j7pv25f6></canvas> <div class="chart-metrics" data-astro-cid-j7pv25f6> <span class="metric-chip" data-astro-cid-j7pv25f6>Availability <strong id="availability-rate" data-astro-cid-j7pv25f6>-</strong></span> <span class="metric-chip" data-astro-cid-j7pv25f6>Down events <strong id="down-events" data-astro-cid-j7pv25f6>-</strong></span> <span class="metric-chip" data-astro-cid-j7pv25f6>Down rows <strong id="down-rows" data-astro-cid-j7pv25f6>-</strong></span> </div> <p id="timeline-caption" class="chart-caption" data-astro-cid-j7pv25f6>Choose track to draw timeline</p> </article> </div> </section> <section class="panel" data-astro-cid-j7pv25f6> <h2 data-astro-cid-j7pv25f6>Targets</h2> <div class="table-wrap" data-astro-cid-j7pv25f6> <table data-astro-cid-j7pv25f6> <thead data-astro-cid-j7pv25f6> <tr data-astro-cid-j7pv25f6> <th data-astro-cid-j7pv25f6>Name</th> <th data-astro-cid-j7pv25f6>Endpoint</th> <th data-astro-cid-j7pv25f6>Status</th> <th data-astro-cid-j7pv25f6>Last Changed (UTC)</th> <th data-astro-cid-j7pv25f6>Last Checked (UTC)</th> </tr> </thead> <tbody id="status-table-body" data-astro-cid-j7pv25f6></tbody> </table> </div> </section> <section class="panel" data-astro-cid-j7pv25f6> <h2 data-astro-cid-j7pv25f6>Logs</h2> <div class="logs-controls" data-astro-cid-j7pv25f6> <div class="field" data-astro-cid-j7pv25f6> <label for="track-select" data-astro-cid-j7pv25f6>Track</label> <select id="track-select" data-astro-cid-j7pv25f6></select> </div> <div class="field" data-astro-cid-j7pv25f6> <label for="days-input" data-astro-cid-j7pv25f6>Days</label> <input id="days-input" type="number" min="1" max="365" value="7" data-astro-cid-j7pv25f6> </div> <div class="field" data-astro-cid-j7pv25f6> <label for="limit-input" data-astro-cid-j7pv25f6>Rows</label> <input id="limit-input" type="number" min="1" max="5000" value="2000" data-astro-cid-j7pv25f6> </div> <button id="refresh-logs-btn" class="btn-ghost" type="button" data-astro-cid-j7pv25f6>Load Logs</button> </div> <p id="logs-meta" class="logs-meta" data-astro-cid-j7pv25f6>No logs loaded.</p> <pre id="logs-output" data-astro-cid-j7pv25f6>(no data)</pre> </section> <p id="status-line" class="status-line" data-astro-cid-j7pv25f6></p> </main> <div id="auth-gate" class="auth-gate hidden" data-astro-cid-j7pv25f6> <div class="auth-card" data-astro-cid-j7pv25f6> <h3 data-astro-cid-j7pv25f6>Dashboard authorization required</h3> <p data-astro-cid-j7pv25f6>Open Telegram and send <code data-astro-cid-j7pv25f6>/authme</code> to your bot.</p> <p data-astro-cid-j7pv25f6>Use the link from the bot message to authorize this browser.</p> <p data-astro-cid-j7pv25f6>Session is valid until browser restart or 24 hours.</p> </div> </div> <script type="module">
+      const ui = {
+        tableBody: document.getElementById("status-table-body"),
+        trackSelect: document.getElementById("track-select"),
+        daysInput: document.getElementById("days-input"),
+        limitInput: document.getElementById("limit-input"),
+        logsOutput: document.getElementById("logs-output"),
+        logsMeta: document.getElementById("logs-meta"),
+        statusLine: document.getElementById("status-line"),
+        authGate: document.getElementById("auth-gate"),
+        refreshStatusBtn: document.getElementById("refresh-status-btn"),
+        refreshLogsBtn: document.getElementById("refresh-logs-btn"),
+        logoutBtn: document.getElementById("logout-btn"),
+        themeToggleBtn: document.getElementById("theme-toggle-btn"),
+        summaryTotal: document.getElementById("summary-total"),
+        summaryUp: document.getElementById("summary-up"),
+        summaryDown: document.getElementById("summary-down"),
+        summaryUnknown: document.getElementById("summary-unknown"),
+        sessionExpiry: document.getElementById("session-expiry"),
+        snapshotTime: document.getElementById("snapshot-time"),
+        overviewChart: document.getElementById("overview-chart"),
+        timelineChart: document.getElementById("timeline-chart"),
+        overviewCaption: document.getElementById("overview-caption"),
+        timelineCaption: document.getElementById("timeline-caption"),
+        availabilityRate: document.getElementById("availability-rate"),
+        downEvents: document.getElementById("down-events"),
+        downRows: document.getElementById("down-rows")
+      };
+
+      const state = {
+        authorized: false,
+        selectedTrack: "",
+        refreshTimer: null,
+        logTimer: null,
+        tracks: [],
+        theme: "light"
+      };
+
+      const THEME_KEY = "trackway_theme";
+
+      function setStatusLine(text) {
+        ui.statusLine.textContent = text;
+      }
+
+      function badgeClass(status) {
+        if (status === "UP") return "badge badge-up";
+        if (status === "DOWN") return "badge badge-down";
+        return "badge badge-unknown";
+      }
+
+      function pickCSSColor(name, fallback) {
+        const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+        return value || fallback;
+      }
+
+      function resizeCanvas(canvas) {
+        const dpr = window.devicePixelRatio || 1;
+        const rect = canvas.getBoundingClientRect();
+        const targetWidth = Math.max(10, Math.floor(rect.width * dpr));
+        const targetHeight = Math.max(10, Math.floor(rect.height * dpr));
+        if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+          canvas.width = targetWidth;
+          canvas.height = targetHeight;
+        }
+      }
+
+      function drawOverviewChart(payload) {
+        const canvas = ui.overviewChart;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+        resizeCanvas(canvas);
+        const width = canvas.width;
+        const height = canvas.height;
+        ctx.clearRect(0, 0, width, height);
+
+        const values = [
+          { label: "UP", value: payload.up, color: pickCSSColor("--up", "#0f8c4a") },
+          { label: "DOWN", value: payload.down, color: pickCSSColor("--down", "#d1372f") },
+          { label: "UNKNOWN", value: payload.unknown, color: pickCSSColor("--unknown", "#7d6f3c") }
+        ];
+        const maxValue = Math.max(1, ...values.map((item) => item.value));
+        const baseY = Math.floor(height * 0.82);
+        const chartHeight = Math.floor(height * 0.62);
+        const gap = Math.floor(width * 0.05);
+        const barWidth = Math.floor((width - gap * 4) / 3);
+
+        const gridColor = pickCSSColor("--chart-grid", "#d9e6e1");
+        ctx.strokeStyle = gridColor;
+        ctx.lineWidth = 1;
+        for (let i = 0; i <= 4; i++) {
+          const y = Math.floor(baseY - (chartHeight / 4) * i);
+          ctx.beginPath();
+          ctx.moveTo(gap, y);
+          ctx.lineTo(width - gap, y);
+          ctx.stroke();
+        }
+
+        ctx.font = `${Math.floor(height * 0.085)}px Chivo, sans-serif`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+
+        values.forEach((item, index) => {
+          const left = gap + gap * index + barWidth * index;
+          const barHeight = Math.floor((item.value / maxValue) * chartHeight);
+          const top = baseY - barHeight;
+
+          ctx.fillStyle = item.color;
+          ctx.fillRect(left, top, barWidth, barHeight);
+
+          ctx.fillStyle = pickCSSColor("--ink", "#10242c");
+          ctx.fillText(`${item.value}`, left + barWidth / 2, top - Math.floor(height * 0.06));
+          ctx.fillText(item.label, left + barWidth / 2, baseY + Math.floor(height * 0.09));
+        });
+
+        const downPercent = payload.total > 0 ? ((payload.down / payload.total) * 100).toFixed(1) : "0.0";
+        ui.overviewCaption.textContent = `Tracks: ${payload.total} | down ratio: ${downPercent}%`;
+      }
+
+      function normalizeRow(row) {
+        return {
+          timestamp: row.timestamp || row.Timestamp || "",
+          status: row.status || row.Status || "",
+          endpoint: row.endpoint || row.Endpoint || "",
+          reason: row.reason || row.Reason || ""
+        };
+      }
+
+      function drawTimelineChart(rows, trackName) {
+        const canvas = ui.timelineChart;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+        resizeCanvas(canvas);
+        const width = canvas.width;
+        const height = canvas.height;
+        ctx.clearRect(0, 0, width, height);
+
+        if (!rows.length) {
+          ui.timelineCaption.textContent = `Track: ${trackName} | no rows`;
+          ui.availabilityRate.textContent = "-";
+          ui.downEvents.textContent = "-";
+          ui.downRows.textContent = "-";
+          return;
+        }
+
+        const limitRows = rows.slice(Math.max(0, rows.length - 280));
+        const total = limitRows.length;
+        let upRows = 0;
+        let downRows = 0;
+        let downEvents = 0;
+        let prevStatus = "";
+
+        const upColor = pickCSSColor("--up", "#0f8c4a");
+        const downColor = pickCSSColor("--down", "#d1372f");
+        const unknownColor = pickCSSColor("--unknown", "#7d6f3c");
+        const gridColor = pickCSSColor("--chart-grid", "#d9e6e1");
+
+        ctx.fillStyle = gridColor;
+        ctx.fillRect(0, Math.floor(height * 0.52), width, 1);
+
+        const barGap = 1;
+        const fullBarWidth = Math.max(2, Math.floor(width / total));
+        const barWidth = Math.max(1, fullBarWidth - barGap);
+
+        limitRows.forEach((raw, index) => {
+          const row = normalizeRow(raw);
+          let color = unknownColor;
+          if (row.status === "UP") {
+            color = upColor;
+            upRows++;
+          } else if (row.status === "DOWN") {
+            color = downColor;
+            downRows++;
+            if (prevStatus !== "DOWN") {
+              downEvents++;
+            }
+          }
+          prevStatus = row.status;
+
+          const x = Math.floor(index * fullBarWidth);
+          const top = row.status === "DOWN" ? Math.floor(height * 0.52) : Math.floor(height * 0.22);
+          const h = row.status === "DOWN" ? Math.floor(height * 0.33) : Math.floor(height * 0.3);
+          ctx.fillStyle = color;
+          ctx.fillRect(x, top, barWidth, h);
+        });
+
+        const availability = total > 0 ? ((upRows / total) * 100).toFixed(2) : "0.00";
+        ui.availabilityRate.textContent = `${availability}%`;
+        ui.downEvents.textContent = String(downEvents);
+        ui.downRows.textContent = String(downRows);
+
+        const from = normalizeRow(limitRows[0]).timestamp || "-";
+        const to = normalizeRow(limitRows[limitRows.length - 1]).timestamp || "-";
+        ui.timelineCaption.textContent = `Track: ${trackName} | rows shown: ${total} | range: ${from} .. ${to}`;
+      }
+
+      async function fetchJSON(url, options = {}) {
+        const response = await fetch(url, {
+          credentials: "include",
+          headers: {
+            Accept: "application/json"
+          },
+          ...options
+        });
+        let data = null;
+        try {
+          data = await response.json();
+        } catch (_) {
+          data = null;
+        }
+        if (!response.ok) {
+          const reason = data && data.error ? data.error : `HTTP ${response.status}`;
+          const err = new Error(reason);
+          err.status = response.status;
+          throw err;
+        }
+        return data;
+      }
+
+      async function refreshSession() {
+        const session = await fetchJSON("/api/auth/session");
+        state.authorized = true;
+        ui.authGate.classList.add("hidden");
+        ui.sessionExpiry.textContent = formatClock(session.expires_at);
+      }
+
+      function formatClock(value) {
+        if (!value || value === "-") return "-";
+        const date = new Date(value);
+        if (Number.isNaN(date.valueOf())) return value;
+        return date.toISOString().replace("T", " ").slice(0, 19);
+      }
+
+      function renderStatus(payload) {
+        state.tracks = payload.targets.map((item) => item.name);
+        ui.summaryTotal.textContent = String(payload.total);
+        ui.summaryUp.textContent = String(payload.up);
+        ui.summaryDown.textContent = String(payload.down);
+        ui.summaryUnknown.textContent = String(payload.unknown);
+        ui.snapshotTime.textContent = formatClock(payload.generated_at);
+        drawOverviewChart(payload);
+
+        ui.tableBody.innerHTML = "";
+        for (const target of payload.targets) {
+          const row = document.createElement("tr");
+          if (target.name === state.selectedTrack) {
+            row.classList.add("active");
+          }
+          row.dataset.track = target.name;
+          row.innerHTML = `
+            <td>${escapeHtml(target.name)}</td>
+            <td><code>${escapeHtml(target.address)}:${target.port}</code></td>
+            <td><span class="${badgeClass(target.status)}">${target.status}</span></td>
+            <td><code>${escapeHtml(target.last_changed)}</code></td>
+            <td><code>${escapeHtml(target.last_checked)}</code></td>
+          `;
+          row.addEventListener("click", () => {
+            state.selectedTrack = target.name;
+            syncTrackSelect();
+            renderStatus(payload);
+            void loadLogs();
+          });
+          ui.tableBody.appendChild(row);
+        }
+
+        syncTrackSelect();
+      }
+
+      function syncTrackSelect() {
+        const previous = state.selectedTrack;
+        const options = state.tracks;
+        if (!options.length) {
+          ui.trackSelect.innerHTML = "";
+          return;
+        }
+        if (!previous || !options.includes(previous)) {
+          state.selectedTrack = options[0];
+        }
+        ui.trackSelect.innerHTML = options
+          .map((name) => `<option value="${escapeAttr(name)}">${escapeHtml(name)}</option>`)
+          .join("");
+        ui.trackSelect.value = state.selectedTrack;
+      }
+
+      async function loadStatus() {
+        const payload = await fetchJSON("/api/status");
+        renderStatus(payload);
+        setStatusLine(`Status updated: ${new Date().toISOString().replace("T", " ").slice(0, 19)} UTC`);
+      }
+
+      async function loadLogs() {
+        if (!state.selectedTrack) {
+          ui.logsOutput.textContent = "(no tracks)";
+          ui.logsMeta.textContent = "No tracks available.";
+          drawTimelineChart([], "none");
+          return;
+        }
+        const days = Number(ui.daysInput.value) || 7;
+        const limit = Number(ui.limitInput.value) || 2000;
+        const query = new URLSearchParams({
+          track: state.selectedTrack,
+          days: String(days),
+          limit: String(limit)
+        });
+        const payload = await fetchJSON(`/api/logs?${query.toString()}`);
+        const rows = Array.isArray(payload.rows) ? payload.rows : [];
+        ui.logsMeta.textContent = `Track: ${payload.track} | rows: ${rows.length} | days: ${payload.days}`;
+        ui.logsOutput.textContent = payload.text || "(no rows)";
+        drawTimelineChart(rows, payload.track);
+      }
+
+      function clearTimers() {
+        if (state.refreshTimer !== null) {
+          clearInterval(state.refreshTimer);
+          state.refreshTimer = null;
+        }
+        if (state.logTimer !== null) {
+          clearInterval(state.logTimer);
+          state.logTimer = null;
+        }
+      }
+
+      async function logout() {
+        try {
+          await fetchJSON("/auth/logout", { method: "POST" });
+        } catch (_) {
+          // ignore server errors on logout
+        }
+        clearTimers();
+        state.authorized = false;
+        ui.authGate.classList.remove("hidden");
+        setStatusLine("Logged out.");
+      }
+
+      function escapeHtml(value) {
+        return String(value)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#39;");
+      }
+
+      function escapeAttr(value) {
+        return escapeHtml(value);
+      }
+
+      function resolveInitialTheme() {
+        const stored = localStorage.getItem(THEME_KEY);
+        if (stored === "dark" || stored === "light") {
+          return stored;
+        }
+        if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+          return "dark";
+        }
+        return "light";
+      }
+
+      function applyTheme(theme) {
+        state.theme = theme === "dark" ? "dark" : "light";
+        document.documentElement.setAttribute("data-theme", state.theme);
+        localStorage.setItem(THEME_KEY, state.theme);
+        ui.themeToggleBtn.textContent = state.theme === "dark" ? "Theme: Dark" : "Theme: Light";
+      }
+
+      function toggleTheme() {
+        const next = state.theme === "dark" ? "light" : "dark";
+        applyTheme(next);
+      }
+
+      async function bootstrap() {
+        applyTheme(resolveInitialTheme());
+        try {
+          await refreshSession();
+          await loadStatus();
+          await loadLogs();
+        } catch (error) {
+          state.authorized = false;
+          ui.authGate.classList.remove("hidden");
+          clearTimers();
+          setStatusLine(`Authorization required: ${error.message}`);
+          return;
+        }
+
+        clearTimers();
+        state.refreshTimer = setInterval(() => {
+          void loadStatus().catch((error) => {
+            clearTimers();
+            ui.authGate.classList.remove("hidden");
+            setStatusLine(`Session lost: ${error.message}`);
+          });
+        }, 5000);
+
+        state.logTimer = setInterval(() => {
+          void loadLogs().catch((error) => {
+            setStatusLine(`Log refresh error: ${error.message}`);
+          });
+        }, 10000);
+      }
+
+      ui.refreshStatusBtn.addEventListener("click", () => {
+        void loadStatus().catch((error) => {
+          setStatusLine(`Status refresh failed: ${error.message}`);
+        });
+      });
+
+      ui.refreshLogsBtn.addEventListener("click", () => {
+        state.selectedTrack = ui.trackSelect.value;
+        void loadLogs().catch((error) => {
+          setStatusLine(`Log load failed: ${error.message}`);
+        });
+      });
+
+      ui.trackSelect.addEventListener("change", () => {
+        state.selectedTrack = ui.trackSelect.value;
+        void loadLogs().catch((error) => {
+          setStatusLine(`Log load failed: ${error.message}`);
+        });
+      });
+
+      ui.logoutBtn.addEventListener("click", () => {
+        void logout();
+      });
+
+      ui.themeToggleBtn.addEventListener("click", () => {
+        toggleTheme();
+        void loadStatus().catch(() => {});
+        void loadLogs().catch(() => {});
+      });
+
+      window.addEventListener("resize", () => {
+        void loadStatus().catch(() => {});
+        void loadLogs().catch(() => {});
+      });
+
+      void bootstrap();
+    </script> </body> </html>

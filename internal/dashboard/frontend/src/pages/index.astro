@@ -1,0 +1,944 @@
+---
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Trackway Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Chivo:wght@400;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #f0f5f3;
+        --bg-layer-a: #ffffff;
+        --bg-layer-b: #dbf2fb;
+        --bg-layer-c: #eff6f3;
+        --card: #ffffff;
+        --ink: #10242c;
+        --muted: #4a6672;
+        --line: #c7d9d1;
+        --table-head: #f8fbfa;
+        --table-hover: #f8fbfa;
+        --table-active: #edf7fb;
+        --up: #0f8c4a;
+        --up-soft: #e8faef;
+        --down: #d1372f;
+        --down-soft: #ffeceb;
+        --unknown: #7d6f3c;
+        --unknown-soft: #fff8e2;
+        --accent: #016f91;
+        --accent-soft: #d8edf5;
+        --danger: #d1372f;
+        --danger-soft: #fff4f2;
+        --code-bg: #f7fbff;
+        --code-line: #d6e7ef;
+        --chart-grid: #d9e6e1;
+      }
+
+      :root[data-theme="dark"] {
+        --bg: #0e171d;
+        --bg-layer-a: #19242d;
+        --bg-layer-b: #10303e;
+        --bg-layer-c: #111e25;
+        --card: #17262f;
+        --ink: #e6f0f3;
+        --muted: #9cb2bd;
+        --line: #2e4754;
+        --table-head: #20333f;
+        --table-hover: #1b2c35;
+        --table-active: #1f3b49;
+        --up: #50ce86;
+        --up-soft: #153427;
+        --down: #ff7f7a;
+        --down-soft: #402220;
+        --unknown: #f2cb69;
+        --unknown-soft: #3e361d;
+        --accent: #38a5c8;
+        --accent-soft: #1c3745;
+        --danger: #ff877f;
+        --danger-soft: #432624;
+        --code-bg: #13222b;
+        --code-line: #2b4350;
+        --chart-grid: #2e4652;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: "Chivo", sans-serif;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at 0% 0%, var(--bg-layer-a), transparent 46%),
+          radial-gradient(circle at 100% 0%, var(--bg-layer-b), transparent 40%),
+          linear-gradient(145deg, var(--bg-layer-c), var(--bg));
+      }
+
+      .dashboard {
+        width: min(1180px, calc(100% - 2rem));
+        margin: 1.4rem auto 2rem;
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 1rem;
+      }
+
+      .hero {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 1rem 1.1rem;
+        box-shadow: 0 14px 28px rgba(8, 16, 20, 0.12);
+        display: grid;
+        gap: 0.85rem;
+      }
+
+      .hero-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 1rem;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(1.24rem, 2.8vw, 1.8rem);
+        letter-spacing: 0.02em;
+      }
+
+      .subtitle {
+        margin: 0.25rem 0 0;
+        color: var(--muted);
+        font-size: 0.93rem;
+      }
+
+      .meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+      }
+
+      .chip {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        font-size: 0.8rem;
+        padding: 0.36rem 0.68rem;
+        background: color-mix(in srgb, var(--card) 78%, var(--accent-soft) 22%);
+        color: var(--ink);
+      }
+
+      .chip strong {
+        font-weight: 700;
+        margin-left: 0.18rem;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+      }
+
+      button,
+      select,
+      input {
+        font: inherit;
+      }
+
+      button {
+        border: 1px solid transparent;
+        border-radius: 10px;
+        padding: 0.52rem 0.84rem;
+        cursor: pointer;
+        transition: transform 0.14s ease, box-shadow 0.14s ease;
+      }
+
+      button:hover {
+        transform: translateY(-1px);
+      }
+
+      .btn-primary {
+        color: #ffffff;
+        background: linear-gradient(140deg, #016f91, #0a8f77);
+        box-shadow: 0 8px 18px rgba(1, 111, 145, 0.22);
+      }
+
+      .btn-ghost {
+        border-color: var(--line);
+        background: color-mix(in srgb, var(--card) 86%, var(--accent-soft) 14%);
+        color: var(--ink);
+      }
+
+      .btn-danger {
+        border-color: color-mix(in srgb, var(--danger) 45%, var(--line) 55%);
+        background: var(--danger-soft);
+        color: var(--danger);
+      }
+
+      .panel {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 0.95rem 1rem;
+        box-shadow: 0 12px 24px rgba(8, 16, 20, 0.08);
+      }
+
+      .panel h2 {
+        margin: 0 0 0.75rem;
+        font-size: 1rem;
+      }
+
+      .charts-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 0.75rem;
+      }
+
+      .chart-card {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 0.75rem;
+        background: color-mix(in srgb, var(--card) 82%, var(--accent-soft) 18%);
+      }
+
+      .chart-card h3 {
+        margin: 0 0 0.45rem;
+        font-size: 0.88rem;
+      }
+
+      .chart-caption {
+        margin: 0.4rem 0 0;
+        color: var(--muted);
+        font-size: 0.78rem;
+      }
+
+      canvas {
+        width: 100%;
+        height: 160px;
+        display: block;
+      }
+
+      .chart-metrics {
+        margin-top: 0.6rem;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.45rem;
+      }
+
+      .metric-chip {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 0.24rem 0.58rem;
+        font-size: 0.78rem;
+        color: var(--ink);
+      }
+
+      .table-wrap {
+        width: 100%;
+        overflow: auto;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        min-width: 760px;
+      }
+
+      th,
+      td {
+        text-align: left;
+        border-bottom: 1px solid color-mix(in srgb, var(--line) 72%, transparent 28%);
+        padding: 0.56rem 0.5rem;
+        font-size: 0.9rem;
+      }
+
+      th {
+        font-size: 0.78rem;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        position: sticky;
+        top: 0;
+        background: var(--table-head);
+      }
+
+      tbody tr {
+        cursor: pointer;
+      }
+
+      tbody tr:hover {
+        background: var(--table-hover);
+      }
+
+      tbody tr.active {
+        background: var(--table-active);
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.33rem;
+        border-radius: 999px;
+        padding: 0.2rem 0.58rem;
+        font-size: 0.78rem;
+        font-weight: 700;
+      }
+
+      .badge-up {
+        color: var(--up);
+        background: var(--up-soft);
+      }
+
+      .badge-down {
+        color: var(--down);
+        background: var(--down-soft);
+      }
+
+      .badge-unknown {
+        color: var(--unknown);
+        background: var(--unknown-soft);
+      }
+
+      .logs-controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.62rem;
+        align-items: end;
+        margin-bottom: 0.75rem;
+      }
+
+      .field {
+        display: grid;
+        gap: 0.2rem;
+      }
+
+      .field label {
+        color: var(--muted);
+        font-size: 0.78rem;
+      }
+
+      select,
+      input {
+        min-width: 110px;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        padding: 0.42rem 0.52rem;
+        background: var(--card);
+        color: var(--ink);
+      }
+
+      .logs-meta {
+        font-size: 0.8rem;
+        color: var(--muted);
+        margin: 0 0 0.54rem;
+      }
+
+      pre {
+        margin: 0;
+        background: var(--code-bg);
+        border: 1px solid var(--code-line);
+        border-radius: 12px;
+        padding: 0.75rem;
+        font-size: 0.78rem;
+        line-height: 1.42;
+        min-height: 320px;
+        max-height: 520px;
+        overflow: auto;
+        font-family: "IBM Plex Mono", monospace;
+        white-space: pre;
+      }
+
+      .status-line {
+        margin: 0;
+        font-size: 0.82rem;
+        color: var(--muted);
+      }
+
+      .auth-gate {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(8, 16, 20, 0.64);
+        padding: 1rem;
+      }
+
+      .auth-card {
+        width: min(520px, 100%);
+        background: var(--card);
+        border-radius: 14px;
+        border: 1px solid var(--line);
+        padding: 1.1rem 1.2rem;
+      }
+
+      .auth-card h3 {
+        margin: 0 0 0.48rem;
+      }
+
+      .auth-card p {
+        margin: 0.3rem 0;
+        color: var(--muted);
+      }
+
+      .hidden {
+        display: none;
+      }
+
+      @media (max-width: 760px) {
+        .dashboard {
+          width: calc(100% - 1rem);
+          margin: 0.8rem auto 1rem;
+        }
+
+        .hero-top {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+
+        pre {
+          min-height: 240px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="dashboard">
+      <section class="hero">
+        <div class="hero-top">
+          <div>
+            <h1>Trackway Dashboard</h1>
+            <p class="subtitle">TCP statuses, downtime timeline and full track logs.</p>
+          </div>
+          <div class="actions">
+            <button id="theme-toggle-btn" class="btn-ghost" type="button">Theme</button>
+            <button id="refresh-status-btn" class="btn-primary" type="button">Refresh</button>
+            <button id="logout-btn" class="btn-danger" type="button">Logout</button>
+          </div>
+        </div>
+        <div class="meta">
+          <span class="chip">Total <strong id="summary-total">0</strong></span>
+          <span class="chip">UP <strong id="summary-up">0</strong></span>
+          <span class="chip">DOWN <strong id="summary-down">0</strong></span>
+          <span class="chip">UNKNOWN <strong id="summary-unknown">0</strong></span>
+          <span class="chip">Session expires <strong id="session-expiry">-</strong></span>
+          <span class="chip">Snapshot <strong id="snapshot-time">-</strong></span>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Charts</h2>
+        <div class="charts-grid">
+          <article class="chart-card">
+            <h3>Current Snapshot (all tracks)</h3>
+            <canvas id="overview-chart" width="960" height="160"></canvas>
+            <p id="overview-caption" class="chart-caption">No data</p>
+          </article>
+          <article class="chart-card">
+            <h3>Track Timeline (from logs)</h3>
+            <canvas id="timeline-chart" width="960" height="160"></canvas>
+            <div class="chart-metrics">
+              <span class="metric-chip">Availability <strong id="availability-rate">-</strong></span>
+              <span class="metric-chip">Down events <strong id="down-events">-</strong></span>
+              <span class="metric-chip">Down rows <strong id="down-rows">-</strong></span>
+            </div>
+            <p id="timeline-caption" class="chart-caption">Choose track to draw timeline</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Targets</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Endpoint</th>
+                <th>Status</th>
+                <th>Last Changed (UTC)</th>
+                <th>Last Checked (UTC)</th>
+              </tr>
+            </thead>
+            <tbody id="status-table-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Logs</h2>
+        <div class="logs-controls">
+          <div class="field">
+            <label for="track-select">Track</label>
+            <select id="track-select"></select>
+          </div>
+          <div class="field">
+            <label for="days-input">Days</label>
+            <input id="days-input" type="number" min="1" max="365" value="7" />
+          </div>
+          <div class="field">
+            <label for="limit-input">Rows</label>
+            <input id="limit-input" type="number" min="1" max="5000" value="2000" />
+          </div>
+          <button id="refresh-logs-btn" class="btn-ghost" type="button">Load Logs</button>
+        </div>
+        <p id="logs-meta" class="logs-meta">No logs loaded.</p>
+        <pre id="logs-output">(no data)</pre>
+      </section>
+      <p id="status-line" class="status-line"></p>
+    </main>
+
+    <div id="auth-gate" class="auth-gate hidden">
+      <div class="auth-card">
+        <h3>Dashboard authorization required</h3>
+        <p>Open Telegram and send <code>/authme</code> to your bot.</p>
+        <p>Use the link from the bot message to authorize this browser.</p>
+        <p>Session is valid until browser restart or 24 hours.</p>
+      </div>
+    </div>
+
+    <script type="module">
+      const ui = {
+        tableBody: document.getElementById("status-table-body"),
+        trackSelect: document.getElementById("track-select"),
+        daysInput: document.getElementById("days-input"),
+        limitInput: document.getElementById("limit-input"),
+        logsOutput: document.getElementById("logs-output"),
+        logsMeta: document.getElementById("logs-meta"),
+        statusLine: document.getElementById("status-line"),
+        authGate: document.getElementById("auth-gate"),
+        refreshStatusBtn: document.getElementById("refresh-status-btn"),
+        refreshLogsBtn: document.getElementById("refresh-logs-btn"),
+        logoutBtn: document.getElementById("logout-btn"),
+        themeToggleBtn: document.getElementById("theme-toggle-btn"),
+        summaryTotal: document.getElementById("summary-total"),
+        summaryUp: document.getElementById("summary-up"),
+        summaryDown: document.getElementById("summary-down"),
+        summaryUnknown: document.getElementById("summary-unknown"),
+        sessionExpiry: document.getElementById("session-expiry"),
+        snapshotTime: document.getElementById("snapshot-time"),
+        overviewChart: document.getElementById("overview-chart"),
+        timelineChart: document.getElementById("timeline-chart"),
+        overviewCaption: document.getElementById("overview-caption"),
+        timelineCaption: document.getElementById("timeline-caption"),
+        availabilityRate: document.getElementById("availability-rate"),
+        downEvents: document.getElementById("down-events"),
+        downRows: document.getElementById("down-rows")
+      };
+
+      const state = {
+        authorized: false,
+        selectedTrack: "",
+        refreshTimer: null,
+        logTimer: null,
+        tracks: [],
+        theme: "light"
+      };
+
+      const THEME_KEY = "trackway_theme";
+
+      function setStatusLine(text) {
+        ui.statusLine.textContent = text;
+      }
+
+      function badgeClass(status) {
+        if (status === "UP") return "badge badge-up";
+        if (status === "DOWN") return "badge badge-down";
+        return "badge badge-unknown";
+      }
+
+      function pickCSSColor(name, fallback) {
+        const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+        return value || fallback;
+      }
+
+      function resizeCanvas(canvas) {
+        const dpr = window.devicePixelRatio || 1;
+        const rect = canvas.getBoundingClientRect();
+        const targetWidth = Math.max(10, Math.floor(rect.width * dpr));
+        const targetHeight = Math.max(10, Math.floor(rect.height * dpr));
+        if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+          canvas.width = targetWidth;
+          canvas.height = targetHeight;
+        }
+      }
+
+      function drawOverviewChart(payload) {
+        const canvas = ui.overviewChart;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+        resizeCanvas(canvas);
+        const width = canvas.width;
+        const height = canvas.height;
+        ctx.clearRect(0, 0, width, height);
+
+        const values = [
+          { label: "UP", value: payload.up, color: pickCSSColor("--up", "#0f8c4a") },
+          { label: "DOWN", value: payload.down, color: pickCSSColor("--down", "#d1372f") },
+          { label: "UNKNOWN", value: payload.unknown, color: pickCSSColor("--unknown", "#7d6f3c") }
+        ];
+        const maxValue = Math.max(1, ...values.map((item) => item.value));
+        const baseY = Math.floor(height * 0.82);
+        const chartHeight = Math.floor(height * 0.62);
+        const gap = Math.floor(width * 0.05);
+        const barWidth = Math.floor((width - gap * 4) / 3);
+
+        const gridColor = pickCSSColor("--chart-grid", "#d9e6e1");
+        ctx.strokeStyle = gridColor;
+        ctx.lineWidth = 1;
+        for (let i = 0; i <= 4; i++) {
+          const y = Math.floor(baseY - (chartHeight / 4) * i);
+          ctx.beginPath();
+          ctx.moveTo(gap, y);
+          ctx.lineTo(width - gap, y);
+          ctx.stroke();
+        }
+
+        ctx.font = `${Math.floor(height * 0.085)}px Chivo, sans-serif`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+
+        values.forEach((item, index) => {
+          const left = gap + gap * index + barWidth * index;
+          const barHeight = Math.floor((item.value / maxValue) * chartHeight);
+          const top = baseY - barHeight;
+
+          ctx.fillStyle = item.color;
+          ctx.fillRect(left, top, barWidth, barHeight);
+
+          ctx.fillStyle = pickCSSColor("--ink", "#10242c");
+          ctx.fillText(`${item.value}`, left + barWidth / 2, top - Math.floor(height * 0.06));
+          ctx.fillText(item.label, left + barWidth / 2, baseY + Math.floor(height * 0.09));
+        });
+
+        const downPercent = payload.total > 0 ? ((payload.down / payload.total) * 100).toFixed(1) : "0.0";
+        ui.overviewCaption.textContent = `Tracks: ${payload.total} | down ratio: ${downPercent}%`;
+      }
+
+      function normalizeRow(row) {
+        return {
+          timestamp: row.timestamp || row.Timestamp || "",
+          status: row.status || row.Status || "",
+          endpoint: row.endpoint || row.Endpoint || "",
+          reason: row.reason || row.Reason || ""
+        };
+      }
+
+      function drawTimelineChart(rows, trackName) {
+        const canvas = ui.timelineChart;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+        resizeCanvas(canvas);
+        const width = canvas.width;
+        const height = canvas.height;
+        ctx.clearRect(0, 0, width, height);
+
+        if (!rows.length) {
+          ui.timelineCaption.textContent = `Track: ${trackName} | no rows`;
+          ui.availabilityRate.textContent = "-";
+          ui.downEvents.textContent = "-";
+          ui.downRows.textContent = "-";
+          return;
+        }
+
+        const limitRows = rows.slice(Math.max(0, rows.length - 280));
+        const total = limitRows.length;
+        let upRows = 0;
+        let downRows = 0;
+        let downEvents = 0;
+        let prevStatus = "";
+
+        const upColor = pickCSSColor("--up", "#0f8c4a");
+        const downColor = pickCSSColor("--down", "#d1372f");
+        const unknownColor = pickCSSColor("--unknown", "#7d6f3c");
+        const gridColor = pickCSSColor("--chart-grid", "#d9e6e1");
+
+        ctx.fillStyle = gridColor;
+        ctx.fillRect(0, Math.floor(height * 0.52), width, 1);
+
+        const barGap = 1;
+        const fullBarWidth = Math.max(2, Math.floor(width / total));
+        const barWidth = Math.max(1, fullBarWidth - barGap);
+
+        limitRows.forEach((raw, index) => {
+          const row = normalizeRow(raw);
+          let color = unknownColor;
+          if (row.status === "UP") {
+            color = upColor;
+            upRows++;
+          } else if (row.status === "DOWN") {
+            color = downColor;
+            downRows++;
+            if (prevStatus !== "DOWN") {
+              downEvents++;
+            }
+          }
+          prevStatus = row.status;
+
+          const x = Math.floor(index * fullBarWidth);
+          const top = row.status === "DOWN" ? Math.floor(height * 0.52) : Math.floor(height * 0.22);
+          const h = row.status === "DOWN" ? Math.floor(height * 0.33) : Math.floor(height * 0.3);
+          ctx.fillStyle = color;
+          ctx.fillRect(x, top, barWidth, h);
+        });
+
+        const availability = total > 0 ? ((upRows / total) * 100).toFixed(2) : "0.00";
+        ui.availabilityRate.textContent = `${availability}%`;
+        ui.downEvents.textContent = String(downEvents);
+        ui.downRows.textContent = String(downRows);
+
+        const from = normalizeRow(limitRows[0]).timestamp || "-";
+        const to = normalizeRow(limitRows[limitRows.length - 1]).timestamp || "-";
+        ui.timelineCaption.textContent = `Track: ${trackName} | rows shown: ${total} | range: ${from} .. ${to}`;
+      }
+
+      async function fetchJSON(url, options = {}) {
+        const response = await fetch(url, {
+          credentials: "include",
+          headers: {
+            Accept: "application/json"
+          },
+          ...options
+        });
+        let data = null;
+        try {
+          data = await response.json();
+        } catch (_) {
+          data = null;
+        }
+        if (!response.ok) {
+          const reason = data && data.error ? data.error : `HTTP ${response.status}`;
+          const err = new Error(reason);
+          err.status = response.status;
+          throw err;
+        }
+        return data;
+      }
+
+      async function refreshSession() {
+        const session = await fetchJSON("/api/auth/session");
+        state.authorized = true;
+        ui.authGate.classList.add("hidden");
+        ui.sessionExpiry.textContent = formatClock(session.expires_at);
+      }
+
+      function formatClock(value) {
+        if (!value || value === "-") return "-";
+        const date = new Date(value);
+        if (Number.isNaN(date.valueOf())) return value;
+        return date.toISOString().replace("T", " ").slice(0, 19);
+      }
+
+      function renderStatus(payload) {
+        state.tracks = payload.targets.map((item) => item.name);
+        ui.summaryTotal.textContent = String(payload.total);
+        ui.summaryUp.textContent = String(payload.up);
+        ui.summaryDown.textContent = String(payload.down);
+        ui.summaryUnknown.textContent = String(payload.unknown);
+        ui.snapshotTime.textContent = formatClock(payload.generated_at);
+        drawOverviewChart(payload);
+
+        ui.tableBody.innerHTML = "";
+        for (const target of payload.targets) {
+          const row = document.createElement("tr");
+          if (target.name === state.selectedTrack) {
+            row.classList.add("active");
+          }
+          row.dataset.track = target.name;
+          row.innerHTML = `
+            <td>${escapeHtml(target.name)}</td>
+            <td><code>${escapeHtml(target.address)}:${target.port}</code></td>
+            <td><span class="${badgeClass(target.status)}">${target.status}</span></td>
+            <td><code>${escapeHtml(target.last_changed)}</code></td>
+            <td><code>${escapeHtml(target.last_checked)}</code></td>
+          `;
+          row.addEventListener("click", () => {
+            state.selectedTrack = target.name;
+            syncTrackSelect();
+            renderStatus(payload);
+            void loadLogs();
+          });
+          ui.tableBody.appendChild(row);
+        }
+
+        syncTrackSelect();
+      }
+
+      function syncTrackSelect() {
+        const previous = state.selectedTrack;
+        const options = state.tracks;
+        if (!options.length) {
+          ui.trackSelect.innerHTML = "";
+          return;
+        }
+        if (!previous || !options.includes(previous)) {
+          state.selectedTrack = options[0];
+        }
+        ui.trackSelect.innerHTML = options
+          .map((name) => `<option value="${escapeAttr(name)}">${escapeHtml(name)}</option>`)
+          .join("");
+        ui.trackSelect.value = state.selectedTrack;
+      }
+
+      async function loadStatus() {
+        const payload = await fetchJSON("/api/status");
+        renderStatus(payload);
+        setStatusLine(`Status updated: ${new Date().toISOString().replace("T", " ").slice(0, 19)} UTC`);
+      }
+
+      async function loadLogs() {
+        if (!state.selectedTrack) {
+          ui.logsOutput.textContent = "(no tracks)";
+          ui.logsMeta.textContent = "No tracks available.";
+          drawTimelineChart([], "none");
+          return;
+        }
+        const days = Number(ui.daysInput.value) || 7;
+        const limit = Number(ui.limitInput.value) || 2000;
+        const query = new URLSearchParams({
+          track: state.selectedTrack,
+          days: String(days),
+          limit: String(limit)
+        });
+        const payload = await fetchJSON(`/api/logs?${query.toString()}`);
+        const rows = Array.isArray(payload.rows) ? payload.rows : [];
+        ui.logsMeta.textContent = `Track: ${payload.track} | rows: ${rows.length} | days: ${payload.days}`;
+        ui.logsOutput.textContent = payload.text || "(no rows)";
+        drawTimelineChart(rows, payload.track);
+      }
+
+      function clearTimers() {
+        if (state.refreshTimer !== null) {
+          clearInterval(state.refreshTimer);
+          state.refreshTimer = null;
+        }
+        if (state.logTimer !== null) {
+          clearInterval(state.logTimer);
+          state.logTimer = null;
+        }
+      }
+
+      async function logout() {
+        try {
+          await fetchJSON("/auth/logout", { method: "POST" });
+        } catch (_) {
+          // ignore server errors on logout
+        }
+        clearTimers();
+        state.authorized = false;
+        ui.authGate.classList.remove("hidden");
+        setStatusLine("Logged out.");
+      }
+
+      function escapeHtml(value) {
+        return String(value)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#39;");
+      }
+
+      function escapeAttr(value) {
+        return escapeHtml(value);
+      }
+
+      function resolveInitialTheme() {
+        const stored = localStorage.getItem(THEME_KEY);
+        if (stored === "dark" || stored === "light") {
+          return stored;
+        }
+        if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+          return "dark";
+        }
+        return "light";
+      }
+
+      function applyTheme(theme) {
+        state.theme = theme === "dark" ? "dark" : "light";
+        document.documentElement.setAttribute("data-theme", state.theme);
+        localStorage.setItem(THEME_KEY, state.theme);
+        ui.themeToggleBtn.textContent = state.theme === "dark" ? "Theme: Dark" : "Theme: Light";
+      }
+
+      function toggleTheme() {
+        const next = state.theme === "dark" ? "light" : "dark";
+        applyTheme(next);
+      }
+
+      async function bootstrap() {
+        applyTheme(resolveInitialTheme());
+        try {
+          await refreshSession();
+          await loadStatus();
+          await loadLogs();
+        } catch (error) {
+          state.authorized = false;
+          ui.authGate.classList.remove("hidden");
+          clearTimers();
+          setStatusLine(`Authorization required: ${error.message}`);
+          return;
+        }
+
+        clearTimers();
+        state.refreshTimer = setInterval(() => {
+          void loadStatus().catch((error) => {
+            clearTimers();
+            ui.authGate.classList.remove("hidden");
+            setStatusLine(`Session lost: ${error.message}`);
+          });
+        }, 5000);
+
+        state.logTimer = setInterval(() => {
+          void loadLogs().catch((error) => {
+            setStatusLine(`Log refresh error: ${error.message}`);
+          });
+        }, 10000);
+      }
+
+      ui.refreshStatusBtn.addEventListener("click", () => {
+        void loadStatus().catch((error) => {
+          setStatusLine(`Status refresh failed: ${error.message}`);
+        });
+      });
+
+      ui.refreshLogsBtn.addEventListener("click", () => {
+        state.selectedTrack = ui.trackSelect.value;
+        void loadLogs().catch((error) => {
+          setStatusLine(`Log load failed: ${error.message}`);
+        });
+      });
+
+      ui.trackSelect.addEventListener("change", () => {
+        state.selectedTrack = ui.trackSelect.value;
+        void loadLogs().catch((error) => {
+          setStatusLine(`Log load failed: ${error.message}`);
+        });
+      });
+
+      ui.logoutBtn.addEventListener("click", () => {
+        void logout();
+      });
+
+      ui.themeToggleBtn.addEventListener("click", () => {
+        toggleTheme();
+        void loadStatus().catch(() => {});
+        void loadLogs().catch(() => {});
+      });
+
+      window.addEventListener("resize", () => {
+        void loadStatus().catch(() => {});
+        void loadLogs().catch(() => {});
+      });
+
+      void bootstrap();
+    </script>
+  </body>
+</html>

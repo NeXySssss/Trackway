@@ -7,3 +7,5 @@ data/
 config.yaml
 port-tracker.exe
 trackway.exe
+internal/dashboard/frontend/node_modules/
+internal/dashboard/frontend/.astro/

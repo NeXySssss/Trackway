@@ -21,13 +21,22 @@ type Config struct {
 	Storage struct {
 		LogDir string `yaml:"log_dir"`
 	} `yaml:"storage"`
-	Targets []Target `yaml:"targets"`
+	Dashboard Dashboard `yaml:"dashboard"`
+	Targets   []Target  `yaml:"targets"`
 }
 
 type Target struct {
 	Name    string `yaml:"name"`
 	Address string `yaml:"address"`
 	Port    int    `yaml:"port"`
+}
+
+type Dashboard struct {
+	Enabled             bool   `yaml:"enabled"`
+	ListenAddress       string `yaml:"listen_address"`
+	PublicURL           string `yaml:"public_url"`
+	AuthTokenTTLSeconds int    `yaml:"auth_token_ttl_seconds"`
+	SecureCookie        bool   `yaml:"secure_cookie"`
 }
 
 func Load(path string) (Config, error) {
@@ -52,5 +61,21 @@ func Load(path string) (Config, error) {
 			return cfg, errors.New("each target requires non-empty name/address and port > 0")
 		}
 	}
+
+	cfg.Dashboard.ListenAddress = strings.TrimSpace(cfg.Dashboard.ListenAddress)
+	cfg.Dashboard.PublicURL = strings.TrimSpace(cfg.Dashboard.PublicURL)
+	if !cfg.Dashboard.Enabled && (cfg.Dashboard.ListenAddress != "" || cfg.Dashboard.PublicURL != "") {
+		cfg.Dashboard.Enabled = true
+	}
+	if cfg.Dashboard.ListenAddress == "" {
+		cfg.Dashboard.ListenAddress = ":8080"
+	}
+	if cfg.Dashboard.AuthTokenTTLSeconds <= 0 {
+		cfg.Dashboard.AuthTokenTTLSeconds = 300
+	}
+	if cfg.Dashboard.Enabled && cfg.Dashboard.PublicURL == "" {
+		return cfg, errors.New("dashboard.public_url is required when dashboard.enabled is true")
+	}
+
 	return cfg, nil
 }
