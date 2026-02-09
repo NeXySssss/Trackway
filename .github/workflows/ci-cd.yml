@@ -227,37 +227,55 @@ jobs:
                 gsub(/^[[:space:]]+|[[:space:]]+$/, "", s)
                 return s
               }
+              function indent_len(s,   m) {
+                m = match(s, /[^[:space:]]/)
+                if (m == 0) {
+                  return length(s)
+                }
+                return m - 1
+              }
               {
                 line = $0
                 sub(/\r$/, "", line)
+                raw_indent = indent_len(line)
+                trimmed = trim(line)
 
-                if (line ~ /^[[:space:]]*#/) {
+                if (trimmed == "" || trimmed ~ /^#/) {
                   next
                 }
 
-                if (line ~ /^[A-Za-z0-9_-]+:[[:space:]]*$/) {
-                  top = line
-                  sub(/:$/, "", top)
-                  in_storage = (top == "storage")
-                  if (!in_storage) {
+                if (!in_storage) {
+                  if (raw_indent == 0 && trimmed ~ /^storage:[[:space:]]*$/) {
+                    in_storage = 1
+                    storage_indent = raw_indent
                     in_clickhouse = 0
                   }
                   next
                 }
 
-                if (in_storage && line ~ /^[[:space:]]{2}[A-Za-z0-9_-]+:[[:space:]]*$/) {
-                  section = line
-                  section = trim(section)
-                  sub(/:$/, "", section)
-                  in_clickhouse = (section == "clickhouse")
+                if (raw_indent <= storage_indent && trimmed !~ /^storage:[[:space:]]*$/) {
+                  in_storage = 0
+                  in_clickhouse = 0
                   next
                 }
 
-                if (in_storage && in_clickhouse && line ~ ("^[[:space:]]{4}" target_key ":[[:space:]]*")) {
-                  value = line
-                  sub("^[[:space:]]*" target_key ":[[:space:]]*", "", value)
+                if (!in_clickhouse) {
+                  if (trimmed ~ /^clickhouse:[[:space:]]*$/) {
+                    in_clickhouse = 1
+                    clickhouse_indent = raw_indent
+                  }
+                  next
+                }
+
+                if (raw_indent <= clickhouse_indent) {
+                  in_clickhouse = 0
+                  next
+                }
+
+                if (trimmed ~ ("^" target_key ":[[:space:]]*")) {
+                  value = trimmed
+                  sub("^" target_key ":[[:space:]]*", "", value)
                   value = trim(value)
-                  gsub(/\r/, "", value)
 
                   if (value ~ /^".*"$/) {
                     sub(/^"/, "", value)
@@ -400,6 +418,12 @@ jobs:
 
           if ! validate_clickhouse_auth; then
             repaired=0
+
+            if [ -z "${clickhouse_password}" ]; then
+              echo "Configured ClickHouse password is empty (password_length=0), but auth failed." >&2
+              echo "If TRACKWAY_CONFIG_YAML secret is set, it overwrites /opt/trackway/config.yaml on every deploy." >&2
+              echo "Update TRACKWAY_CONFIG_YAML with correct storage.clickhouse.password or remove the secret." >&2
+            fi
 
             if [ -n "${clickhouse_password}" ] && validate_clickhouse_auth_without_password; then
               echo "ClickHouse allows login without password. Applying password from config..." >&2
