@@ -156,12 +156,20 @@ CREATE TABLE IF NOT EXISTS %s (
 	address String,
 	port UInt16,
 	enabled UInt8,
-	updated_at DateTime64(3, 'UTC')
+	updated_at DateTime64(3, 'UTC'),
+	version UInt64
 ) ENGINE = MergeTree()
-ORDER BY (name, updated_at)
+ORDER BY (name, version)
 `, c.targetsTable)
 	if err := c.conn.Exec(ctx, targetsQuery); err != nil {
 		return fmt.Errorf("create clickhouse targets table: %w", err)
+	}
+	alterTargetsQuery := fmt.Sprintf(
+		"ALTER TABLE %s ADD COLUMN IF NOT EXISTS version UInt64 DEFAULT toUnixTimestamp64Nano(updated_at)",
+		c.targetsTable,
+	)
+	if err := c.conn.Exec(ctx, alterTargetsQuery); err != nil {
+		return fmt.Errorf("alter clickhouse targets table: %w", err)
 	}
 
 	return nil
@@ -232,9 +240,9 @@ func (c *clickHouseBackend) listTargets() ([]Target, error) {
 	query := fmt.Sprintf(
 		`SELECT
 	name,
-	argMax(address, updated_at) AS address,
-	argMax(port, updated_at) AS port,
-	argMax(enabled, updated_at) AS enabled
+	argMax(address, version) AS address,
+	argMax(port, version) AS port,
+	argMax(enabled, version) AS enabled
 FROM %s
 GROUP BY name
 ORDER BY name`,
@@ -278,9 +286,13 @@ func (c *clickHouseBackend) upsertTarget(target Target) error {
 	defer cancel()
 
 	query := fmt.Sprintf(
-		"INSERT INTO %s (name, address, port, enabled, updated_at) VALUES (?, ?, ?, ?, ?)",
+		"INSERT INTO %s (name, address, port, enabled, updated_at, version) VALUES (?, ?, ?, ?, ?, ?)",
 		c.targetsTable,
 	)
+	version := uint64(target.UpdatedAt.UTC().UnixNano())
+	if version == 0 {
+		version = uint64(time.Now().UTC().UnixNano())
+	}
 	return c.conn.Exec(
 		ctx,
 		query,
@@ -289,6 +301,7 @@ func (c *clickHouseBackend) upsertTarget(target Target) error {
 		uint16(target.Port),
 		uint8(1),
 		target.UpdatedAt.UTC(),
+		version,
 	)
 }
 
@@ -297,9 +310,10 @@ func (c *clickHouseBackend) deleteTarget(name string) error {
 	defer cancel()
 
 	query := fmt.Sprintf(
-		"INSERT INTO %s (name, address, port, enabled, updated_at) VALUES (?, ?, ?, ?, ?)",
+		"INSERT INTO %s (name, address, port, enabled, updated_at, version) VALUES (?, ?, ?, ?, ?, ?)",
 		c.targetsTable,
 	)
+	now := time.Now().UTC()
 	return c.conn.Exec(
 		ctx,
 		query,
@@ -307,7 +321,8 @@ func (c *clickHouseBackend) deleteTarget(name string) error {
 		"",
 		uint16(0),
 		uint8(0),
-		time.Now().UTC(),
+		now,
+		uint64(now.UnixNano()),
 	)
 }
 

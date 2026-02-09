@@ -7,6 +7,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Trackway Observability</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -64,6 +65,10 @@
         margin: 0.8rem auto 1.4rem;
         display: grid;
         gap: 0.85rem;
+      }
+
+      main.hidden {
+        display: none;
       }
 
       .panel {
@@ -296,32 +301,48 @@
         font-size: 0.78rem;
       }
 
-      .auth-gate {
-        position: fixed;
-        inset: 0;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background: rgba(6, 10, 16, 0.78);
-        padding: 0.8rem;
-      }
-
-      .auth-card {
-        width: min(560px, 100%);
-        border: 1px solid var(--line-strong);
-        border-radius: 14px;
-        background: var(--panel);
+      .auth-screen {
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
         padding: 1rem;
       }
 
+      .auth-card {
+        width: min(720px, 100%);
+        border: 1px solid var(--line-strong);
+        border-radius: 14px;
+        background: linear-gradient(160deg, color-mix(in srgb, var(--panel) 90%, #000 10%), var(--panel));
+        box-shadow: 0 16px 36px rgba(0, 0, 0, 0.25);
+        padding: 1.15rem;
+      }
+
       .auth-card h3 {
-        margin: 0 0 0.45rem;
+        margin: 0 0 0.55rem;
+        font-size: 1.2rem;
       }
 
       .auth-card p {
-        margin: 0.26rem 0;
+        margin: 0.32rem 0;
         color: var(--muted);
-        font-size: 0.86rem;
+        font-size: 0.92rem;
+      }
+
+      .auth-actions {
+        margin-top: 0.75rem;
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+      }
+
+      .auth-status {
+        margin-top: 0.7rem;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: color-mix(in srgb, var(--panel-soft) 92%, #000 8%);
+        padding: 0.6rem 0.7rem;
+        color: var(--ink);
+        font-size: 0.85rem;
       }
 
       .hidden {
@@ -375,7 +396,22 @@
     </style>
   </head>
   <body>
-    <main>
+    <section id="auth-screen" class="auth-screen">
+      <div class="auth-card">
+        <h3>Dashboard authorization required</h3>
+        <p>Open Telegram and send <code>/authme</code> to your bot.</p>
+        <p>Use the authorization link from the bot message in this browser.</p>
+        <p>If this page is opened inside Telegram Mini App, auto-login runs automatically.</p>
+        <p>Session is valid until browser restart or 24 hours.</p>
+        <div class="auth-actions">
+          <button id="auth-retry-btn" class="btn-primary" type="button">Retry Auth</button>
+          <button id="auth-open-telegram-btn" type="button">Open Telegram</button>
+        </div>
+        <p id="auth-status" class="auth-status">Waiting for authorization...</p>
+      </div>
+    </section>
+
+    <main id="dashboard-main" class="hidden">
       <section class="panel header">
         <div class="header-row">
           <div>
@@ -458,15 +494,6 @@
       <p id="status-line" class="status-line"></p>
     </main>
 
-    <div id="auth-gate" class="auth-gate hidden">
-      <div class="auth-card">
-        <h3>Authorization required</h3>
-        <p>Send <code>/authme</code> to your Telegram bot and open the link.</p>
-        <p>If opened inside Telegram Mini App, authorization is attempted automatically.</p>
-        <p>Session remains valid until browser restart or 24 hours.</p>
-      </div>
-    </div>
-
     <script>
       import * as echarts from "echarts";
 
@@ -483,7 +510,11 @@
         logsOutput: document.getElementById("logs-output"),
         logsMeta: document.getElementById("logs-meta"),
         statusLine: document.getElementById("status-line"),
-        authGate: document.getElementById("auth-gate"),
+        authScreen: document.getElementById("auth-screen"),
+        authStatus: document.getElementById("auth-status"),
+        authRetryBtn: document.getElementById("auth-retry-btn"),
+        authOpenTelegramBtn: document.getElementById("auth-open-telegram-btn"),
+        dashboardMain: document.getElementById("dashboard-main"),
         refreshBtn: document.getElementById("refresh-btn"),
         logsBtn: document.getElementById("logs-btn"),
         logoutBtn: document.getElementById("logout-btn"),
@@ -504,7 +535,8 @@
         refreshTimer: null,
         logTimer: null,
         theme: "dark",
-        rows: []
+        rows: [],
+        formDirty: false
       };
 
       const THEME_KEY = "trackway_theme_v2";
@@ -527,6 +559,27 @@
 
       function setStatus(text) {
         ui.statusLine.textContent = text;
+      }
+
+      function setAuthStatus(text) {
+        ui.authStatus.textContent = text;
+      }
+
+      function showAuthScreen(text) {
+        ui.dashboardMain.classList.add("hidden");
+        ui.authScreen.classList.remove("hidden");
+        if (text) {
+          setAuthStatus(text);
+        }
+      }
+
+      function showDashboard() {
+        ui.authScreen.classList.add("hidden");
+        ui.dashboardMain.classList.remove("hidden");
+        requestAnimationFrame(() => {
+          ui.timelineChart.resize();
+          ui.distributionChart.resize();
+        });
       }
 
       function escapeHtml(value) {
@@ -592,16 +645,20 @@
 
       async function tryMiniAppAutoAuth() {
         const tg = window.Telegram?.WebApp;
-        if (!tg || !tg.initData) return false;
+        if (!tg) return false;
         tg.ready?.();
         tg.expand?.();
+        const initData = String(tg.initData || "").trim();
+        if (!initData) {
+          throw new Error("Telegram WebApp initData is empty");
+        }
         await fetchJSON("/api/auth/telegram-miniapp", {
           method: "POST",
           headers: {
             "Content-Type": "application/json"
           },
           body: JSON.stringify({
-            init_data: tg.initData
+            init_data: initData
           })
         });
         return true;
@@ -610,20 +667,23 @@
       async function ensureAuthorized() {
         try {
           await refreshSession();
-          ui.authGate.classList.add("hidden");
+          showDashboard();
+          setAuthStatus("Authorized.");
           return true;
         } catch (_) {
           try {
             const miniAppOk = await tryMiniAppAutoAuth();
             if (miniAppOk) {
               await refreshSession();
-              ui.authGate.classList.add("hidden");
+              showDashboard();
+              setAuthStatus("Authorized via Telegram Mini App.");
               return true;
             }
-          } catch (_) {
-            // no-op
+          } catch (miniErr) {
+            showAuthScreen(`Mini App auth failed: ${miniErr?.message || "unknown error"}`);
+            return false;
           }
-          ui.authGate.classList.remove("hidden");
+          showAuthScreen("Open Telegram, send /authme, then open the auth link here.");
           return false;
         }
       }
@@ -752,7 +812,7 @@
           row.addEventListener("click", () => {
             state.selectedTrack = target.name;
             syncTrackSelect();
-            fillTargetForm(target);
+            fillTargetForm(target, true);
             renderTargetsTable(payload);
             void loadLogs();
           });
@@ -760,11 +820,13 @@
         }
       }
 
-      function fillTargetForm(target) {
+      function fillTargetForm(target, force = false) {
         if (!target) return;
+        if (state.formDirty && !force) return;
         ui.targetNameInput.value = target.name || "";
         ui.targetAddressInput.value = target.address || "";
         ui.targetPortInput.value = String(target.port || 443);
+        state.formDirty = false;
       }
 
       function syncTrackSelect() {
@@ -815,6 +877,8 @@
           },
           body: JSON.stringify({ name, address, port: Math.trunc(port) })
         });
+        state.selectedTrack = name;
+        state.formDirty = false;
       }
 
       async function deleteTarget() {
@@ -828,6 +892,7 @@
         if (state.selectedTrack === name) {
           state.selectedTrack = "";
         }
+        state.formDirty = false;
       }
 
       function buildLogText(rows) {
@@ -878,12 +943,13 @@
           // noop
         }
         clearTimers();
-        ui.authGate.classList.remove("hidden");
+        showAuthScreen("Logged out. Send /authme and open auth link.");
         setStatus("Logged out");
       }
 
       async function bootstrap() {
         applyTheme(resolveInitialTheme());
+        showAuthScreen("Checking authorization...");
         const ok = await ensureAuthorized();
         if (!ok) {
           setStatus("Authorization required");
@@ -953,6 +1019,20 @@
           .then(() => loadLogs())
           .then(() => setStatus("Target deleted"))
           .catch((error) => setStatus(`Target delete error: ${error.message}`));
+      });
+
+      for (const el of [ui.targetNameInput, ui.targetAddressInput, ui.targetPortInput]) {
+        el.addEventListener("input", () => {
+          state.formDirty = true;
+        });
+      }
+
+      ui.authRetryBtn.addEventListener("click", () => {
+        void bootstrap();
+      });
+
+      ui.authOpenTelegramBtn.addEventListener("click", () => {
+        window.open("https://t.me", "_blank", "noopener,noreferrer");
       });
 
       void bootstrap();
