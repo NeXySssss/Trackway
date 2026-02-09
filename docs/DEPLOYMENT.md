@@ -114,9 +114,9 @@ Set these repository secrets:
 - `DEPLOY_SSH_PRIVATE_KEY` - full private key (`~/.ssh/trackway_deploy`)
 - `DEPLOY_SSH_PORT` - optional, default `22`
 - `DEPLOY_SSH_KNOWN_HOSTS` - optional but recommended (`ssh-keyscan -H <host>`)
-- `GHCR_USERNAME` - GHCR username (usually your GitHub username)
-- `GHCR_TOKEN` - GitHub token with `read:packages` and `write:packages`
 - `TRACKWAY_CONFIG_YAML` - optional full runtime config YAML
+
+GHCR login for build/push and deploy uses built-in `${{ secrets.GITHUB_TOKEN }}`.
 
 Create `known_hosts` value:
 

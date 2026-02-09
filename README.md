@@ -117,7 +117,7 @@ Quick 502 checklist:
 - Nightly ClickHouse backup: `.github/workflows/clickhouse-backup.yml`
 - Full Debian 13 setup guide: `docs/DEPLOYMENT.md`
 - SSH secrets for deploy: `DEPLOY_SSH_HOST`, `DEPLOY_SSH_USER`, `DEPLOY_SSH_PRIVATE_KEY` (and optional `DEPLOY_SSH_PORT`, `DEPLOY_SSH_KNOWN_HOSTS`)
-- GHCR secrets for image deploy: `GHCR_USERNAME`, `GHCR_TOKEN`
+- GHCR auth uses built-in `GITHUB_TOKEN` from GitHub Actions
 
 ## Frontend build
 Astro assets are built once and embedded into the Go binary.
