@@ -5,6 +5,7 @@ import (
 	"embed"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -162,9 +163,20 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 }
 
 func (s *Server) handleAuthVerify(w http.ResponseWriter, r *http.Request) {
-	token := strings.TrimSpace(r.URL.Query().Get("token"))
+	token := strings.TrimSpace(r.FormValue("token"))
 	if token == "" {
 		http.Error(w, "missing token", http.StatusBadRequest)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		s.renderVerifyPage(w, token)
+		return
+	case http.MethodPost:
+		// proceed to token consumption
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
@@ -177,6 +189,24 @@ func (s *Server) handleAuthVerify(w http.ResponseWriter, r *http.Request) {
 
 	s.setSessionCookie(w, sessionID)
 	http.Redirect(w, r, "/", http.StatusFound)
+}
+
+func (s *Server) renderVerifyPage(w http.ResponseWriter, token string) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = fmt.Fprintf(
+		w,
+		"<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"+
+			"<title>Trackway Auth</title><style>body{font-family:Arial,sans-serif;background:#0f1720;color:#e7f0f5;margin:0}"+
+			".card{max-width:520px;margin:8vh auto;background:#162532;border:1px solid #2e4a5b;border-radius:12px;padding:20px}"+
+			"h1{font-size:20px;margin:0 0 12px}p{color:#a7beca}button{background:#2093c3;color:white;border:0;padding:10px 14px;border-radius:8px;cursor:pointer}"+
+			"code{background:#10202d;border:1px solid #2e4a5b;padding:2px 6px;border-radius:6px}</style></head><body>"+
+			"<main class=\"card\"><h1>Authorize dashboard session</h1><p>Press the button below in the same browser where you will open dashboard.</p>"+
+			"<form method=\"post\" action=\"/auth/verify\"><input type=\"hidden\" name=\"token\" value=\"%s\"><button type=\"submit\">Authorize this browser</button></form>"+
+			"<p>Token is one-time and expires quickly.</p><p>If this page was opened by a link preview bot, just ignore it and open the link manually.</p>"+
+			"</main></body></html>",
+		util.HTMLEscape(token),
+	)
 }
 
 func (s *Server) handleAuthLogout(w http.ResponseWriter, r *http.Request) {

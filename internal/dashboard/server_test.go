@@ -130,3 +130,55 @@ func TestListenAndServeReturnsStartupError(t *testing.T) {
 		t.Fatal("ListenAndServe did not return on startup error")
 	}
 }
+
+func TestAuthVerifyRequiresPostToConsumeToken(t *testing.T) {
+	t.Parallel()
+
+	srv, err := New(config.Dashboard{
+		ListenAddress: ":0",
+		PublicURL:     "http://127.0.0.1:8080",
+	}, stubProvider{})
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+
+	token, err := srv.auth.IssueToken(time.Now().UTC())
+	if err != nil {
+		t.Fatalf("issue token: %v", err)
+	}
+
+	// GET only renders confirmation page and must not consume token.
+	getReq := httptest.NewRequest(http.MethodGet, "/auth/verify?token="+token, nil)
+	getRec := httptest.NewRecorder()
+	srv.httpServer.Handler.ServeHTTP(getRec, getReq)
+	if getRec.Code != http.StatusOK {
+		t.Fatalf("expected GET 200, got %d", getRec.Code)
+	}
+	if !strings.Contains(strings.ToLower(getRec.Body.String()), "authorize this browser") {
+		t.Fatalf("expected confirmation page, got: %s", getRec.Body.String())
+	}
+
+	// POST consumes token and sets session cookie.
+	postReq := httptest.NewRequest(http.MethodPost, "/auth/verify", strings.NewReader("token="+token))
+	postReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	postRec := httptest.NewRecorder()
+	srv.httpServer.Handler.ServeHTTP(postRec, postReq)
+	if postRec.Code != http.StatusFound {
+		t.Fatalf("expected POST 302, got %d", postRec.Code)
+	}
+	if loc := postRec.Header().Get("Location"); loc != "/" {
+		t.Fatalf("expected redirect to /, got %q", loc)
+	}
+	if setCookie := postRec.Header().Get("Set-Cookie"); !strings.Contains(setCookie, "trackway_dashboard_session=") {
+		t.Fatalf("expected session cookie, got: %q", setCookie)
+	}
+
+	// Reusing token must fail.
+	postReq2 := httptest.NewRequest(http.MethodPost, "/auth/verify", strings.NewReader("token="+token))
+	postReq2.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	postRec2 := httptest.NewRecorder()
+	srv.httpServer.Handler.ServeHTTP(postRec2, postReq2)
+	if postRec2.Code != http.StatusUnauthorized {
+		t.Fatalf("expected POST reuse 401, got %d", postRec2.Code)
+	}
+}

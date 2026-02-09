@@ -66,8 +66,13 @@ Log reasons:
 ## Dashboard auth flow
 1. Send `/authme` to the bot from `bot.chat_id`.
 2. Open the link from bot message.
-3. Browser receives a session cookie and is redirected to dashboard `/`.
-4. Session ends on browser restart (session cookie) or after 24h (server-side TTL), whichever comes first.
+3. On `/auth/verify` click **Authorize this browser** (token is consumed on POST only).
+4. Browser receives a session cookie and is redirected to dashboard `/`.
+5. Session ends on browser restart (session cookie) or after 24h (server-side TTL), whichever comes first.
+
+Note:
+- Open `/authme` link in the same browser where you use dashboard.
+- Telegram/link-preview crawlers may open the URL; two-step verify prevents token loss before your click.
 
 ## Local run
 ```powershell
