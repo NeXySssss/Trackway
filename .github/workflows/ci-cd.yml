@@ -224,48 +224,56 @@ jobs:
             local config_path="$2"
             awk -v target_key="${key}" '
               function trim(s) {
-                sub(/^[[:space:]]+/, "", s)
-                sub(/[[:space:]]+$/, "", s)
+                gsub(/^[[:space:]]+|[[:space:]]+$/, "", s)
                 return s
               }
-              BEGIN {
-                in_storage = 0
-                in_clickhouse = 0
-              }
-              /^[[:space:]]*#/ { next }
-              /^[A-Za-z0-9_-]+:[[:space:]]*$/ {
-                key = $1
-                sub(/:$/, "", key)
-                in_storage = (key == "storage")
-                if (!in_storage) {
-                  in_clickhouse = 0
-                }
-                next
-              }
-              in_storage && /^[[:space:]]{2}[A-Za-z0-9_-]+:[[:space:]]*$/ {
-                key = $1
-                sub(/:$/, "", key)
-                in_clickhouse = (key == "clickhouse")
-                next
-              }
-              in_storage && in_clickhouse && $0 ~ ("^[[:space:]]{4}" target_key ":[[:space:]]*") {
-                value = $0
-                sub("^[[:space:]]*" target_key ":[[:space:]]*", "", value)
-                value = trim(value)
+              {
+                line = $0
+                sub(/\r$/, "", line)
 
-                if (value ~ /^".*"$/) {
-                  sub(/^"/, "", value)
-                  sub(/"$/, "", value)
-                } else if (value ~ /^'\''.*'\''$/) {
-                  sub(/^'\''/, "", value)
-                  sub(/'\''$/, "", value)
-                } else {
-                  sub(/[[:space:]]+#.*$/, "", value)
-                  value = trim(value)
+                if (line ~ /^[[:space:]]*#/) {
+                  next
                 }
-                print value
-                found = 1
-                exit
+
+                if (line ~ /^[A-Za-z0-9_-]+:[[:space:]]*$/) {
+                  top = line
+                  sub(/:$/, "", top)
+                  in_storage = (top == "storage")
+                  if (!in_storage) {
+                    in_clickhouse = 0
+                  }
+                  next
+                }
+
+                if (in_storage && line ~ /^[[:space:]]{2}[A-Za-z0-9_-]+:[[:space:]]*$/) {
+                  section = line
+                  section = trim(section)
+                  sub(/:$/, "", section)
+                  in_clickhouse = (section == "clickhouse")
+                  next
+                }
+
+                if (in_storage && in_clickhouse && line ~ ("^[[:space:]]{4}" target_key ":[[:space:]]*")) {
+                  value = line
+                  sub("^[[:space:]]*" target_key ":[[:space:]]*", "", value)
+                  value = trim(value)
+                  gsub(/\r/, "", value)
+
+                  if (value ~ /^".*"$/) {
+                    sub(/^"/, "", value)
+                    sub(/"$/, "", value)
+                  } else if (value ~ /^'\''.*'\''$/) {
+                    sub(/^'\''/, "", value)
+                    sub(/'\''$/, "", value)
+                  } else {
+                    sub(/[[:space:]]+#.*$/, "", value)
+                  }
+
+                  value = trim(value)
+                  print value
+                  found = 1
+                  exit
+                }
               }
               END {
                 if (!found) {
@@ -284,6 +292,7 @@ jobs:
           if [ -z "${clickhouse_user}" ]; then
             clickhouse_user="default"
           fi
+          echo "Resolved ClickHouse config from ${TRACKWAY_CONFIG_PATH}: db='${clickhouse_db}', user='${clickhouse_user}', password_length=${#clickhouse_password}"
 
           export DOCKER_CONFIG="/tmp/trackway-docker-auth"
           cleanup_docker_auth() {
@@ -294,65 +303,128 @@ jobs:
           mkdir -p "${DOCKER_CONFIG}"
           printf '%s' "${ghcr_token}" | docker --config "${DOCKER_CONFIG}" login ghcr.io -u "${ghcr_user}" --password-stdin
 
+          compose_with_env() {
+            CLICKHOUSE_DB="${clickhouse_db}" CLICKHOUSE_USER="${clickhouse_user}" CLICKHOUSE_PASSWORD="${clickhouse_password}" TRACKWAY_IMAGE="${TRACKWAY_IMAGE}" docker --config "${DOCKER_CONFIG}" compose \
+              --project-name "${COMPOSE_PROJECT_NAME}" \
+              -f "${DEPLOY_DIR}/docker-compose.yml" "$@"
+          }
+
+          wait_clickhouse_healthy() {
+            clickhouse_container="$(compose_with_env ps -q clickhouse)"
+            if [ -z "${clickhouse_container}" ]; then
+              echo "Failed to resolve clickhouse container id." >&2
+              compose_with_env logs --tail=200 clickhouse
+              return 1
+            fi
+
+            clickhouse_ready=0
+            for _ in $(seq 1 90); do
+              health_status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}' "${clickhouse_container}" 2>/dev/null || echo unknown)"
+              if [ "${health_status}" = "healthy" ]; then
+                clickhouse_ready=1
+                break
+              fi
+              if [ "${health_status}" = "unhealthy" ] || [ "${health_status}" = "exited" ] || [ "${health_status}" = "dead" ]; then
+                echo "ClickHouse is ${health_status}." >&2
+                compose_with_env ps
+                compose_with_env logs --tail=200 clickhouse
+                return 1
+              fi
+              sleep 2
+            done
+
+            if [ "${clickhouse_ready}" -ne 1 ]; then
+              echo "ClickHouse did not become healthy in time." >&2
+              compose_with_env ps
+              compose_with_env logs --tail=200 clickhouse
+              return 1
+            fi
+            return 0
+          }
+
+          validate_clickhouse_auth() {
+            docker exec "${clickhouse_container}" clickhouse-client \
+              --host=127.0.0.1 \
+              --user="${clickhouse_user}" \
+              --password="${clickhouse_password}" \
+              --query="SELECT 1" >/dev/null 2>&1
+          }
+
+          validate_clickhouse_auth_without_password() {
+            docker exec "${clickhouse_container}" clickhouse-client \
+              --host=127.0.0.1 \
+              --user="${clickhouse_user}" \
+              --query="SELECT 1" >/dev/null 2>&1
+          }
+
+          set_clickhouse_user_password() {
+            if [ -z "${clickhouse_password}" ]; then
+              return 0
+            fi
+            case "${clickhouse_user}" in
+              ''|*[!A-Za-z0-9_]*)
+                echo "Unsupported ClickHouse username for automated password repair: ${clickhouse_user}" >&2
+                return 1
+                ;;
+            esac
+
+            escaped_password="$(printf '%s' "${clickhouse_password}" | sed "s/'/''/g")"
+            docker exec "${clickhouse_container}" clickhouse-client \
+              --host=127.0.0.1 \
+              --user="${clickhouse_user}" \
+              --query="ALTER USER ${clickhouse_user} IDENTIFIED BY '${escaped_password}'"
+          }
+
+          reset_clickhouse_access_metadata() {
+            local volume_name
+            volume_name="$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "/var/lib/clickhouse"}}{{.Name}}{{end}}{{end}}' "${clickhouse_container}")"
+            if [ -z "${volume_name}" ]; then
+              echo "Cannot detect ClickHouse data volume." >&2
+              return 1
+            fi
+
+            echo "Resetting ClickHouse access metadata in volume ${volume_name}..."
+            compose_with_env stop clickhouse
+            docker run --rm \
+              -v "${volume_name}:/var/lib/clickhouse" \
+              alpine:3.20 \
+              sh -euc 'rm -rf /var/lib/clickhouse/access/*'
+            compose_with_env up -d --force-recreate clickhouse
+            wait_clickhouse_healthy
+          }
+
           bash "${DEPLOY_DIR}/scripts/backup-clickhouse.sh" "${DEPLOY_DIR}" "${BACKUP_DIR}"
 
-          CLICKHOUSE_DB="${clickhouse_db}" CLICKHOUSE_USER="${clickhouse_user}" CLICKHOUSE_PASSWORD="${clickhouse_password}" TRACKWAY_IMAGE="${TRACKWAY_IMAGE}" docker --config "${DOCKER_CONFIG}" compose \
-            --project-name "${COMPOSE_PROJECT_NAME}" \
-            -f "${DEPLOY_DIR}/docker-compose.yml" \
-            up -d clickhouse
+          compose_with_env up -d --force-recreate clickhouse
+          wait_clickhouse_healthy
 
-          clickhouse_container="$(CLICKHOUSE_DB="${clickhouse_db}" CLICKHOUSE_USER="${clickhouse_user}" CLICKHOUSE_PASSWORD="${clickhouse_password}" TRACKWAY_IMAGE="${TRACKWAY_IMAGE}" docker --config "${DOCKER_CONFIG}" compose \
-            --project-name "${COMPOSE_PROJECT_NAME}" \
-            -f "${DEPLOY_DIR}/docker-compose.yml" \
-            ps -q clickhouse)"
-          if [ -z "${clickhouse_container}" ]; then
-            echo "Failed to resolve clickhouse container id." >&2
-            CLICKHOUSE_DB="${clickhouse_db}" CLICKHOUSE_USER="${clickhouse_user}" CLICKHOUSE_PASSWORD="${clickhouse_password}" TRACKWAY_IMAGE="${TRACKWAY_IMAGE}" docker --config "${DOCKER_CONFIG}" compose \
-              --project-name "${COMPOSE_PROJECT_NAME}" \
-              -f "${DEPLOY_DIR}/docker-compose.yml" logs --tail=200 clickhouse
-            exit 1
-          fi
+          if ! validate_clickhouse_auth; then
+            repaired=0
 
-          clickhouse_ready=0
-          for _ in $(seq 1 90); do
-            health_status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}' "${clickhouse_container}" 2>/dev/null || echo unknown)"
-            if [ "${health_status}" = "healthy" ]; then
-              clickhouse_ready=1
-              break
+            if [ -n "${clickhouse_password}" ] && validate_clickhouse_auth_without_password; then
+              echo "ClickHouse allows login without password. Applying password from config..." >&2
+              if set_clickhouse_user_password && validate_clickhouse_auth; then
+                repaired=1
+              fi
             fi
-            if [ "${health_status}" = "unhealthy" ] || [ "${health_status}" = "exited" ] || [ "${health_status}" = "dead" ]; then
-              echo "ClickHouse is ${health_status}." >&2
-              CLICKHOUSE_DB="${clickhouse_db}" CLICKHOUSE_USER="${clickhouse_user}" CLICKHOUSE_PASSWORD="${clickhouse_password}" TRACKWAY_IMAGE="${TRACKWAY_IMAGE}" docker --config "${DOCKER_CONFIG}" compose \
-                --project-name "${COMPOSE_PROJECT_NAME}" \
-                -f "${DEPLOY_DIR}/docker-compose.yml" ps
-              CLICKHOUSE_DB="${clickhouse_db}" CLICKHOUSE_USER="${clickhouse_user}" CLICKHOUSE_PASSWORD="${clickhouse_password}" TRACKWAY_IMAGE="${TRACKWAY_IMAGE}" docker --config "${DOCKER_CONFIG}" compose \
-                --project-name "${COMPOSE_PROJECT_NAME}" \
-                -f "${DEPLOY_DIR}/docker-compose.yml" logs --tail=200 clickhouse
+
+            if [ "${repaired}" -ne 1 ]; then
+              echo "ClickHouse rejects configured credentials. Trying one-time access metadata reset..." >&2
+              if reset_clickhouse_access_metadata && validate_clickhouse_auth; then
+                repaired=1
+              fi
+            fi
+
+            if [ "${repaired}" -ne 1 ]; then
+              echo "ClickHouse still rejects configured credentials after automated repair attempts." >&2
+              compose_with_env ps
+              compose_with_env logs --tail=200 clickhouse
               exit 1
             fi
-            sleep 2
-          done
-
-          if [ "${clickhouse_ready}" -ne 1 ]; then
-            echo "ClickHouse did not become healthy in time." >&2
-            CLICKHOUSE_DB="${clickhouse_db}" CLICKHOUSE_USER="${clickhouse_user}" CLICKHOUSE_PASSWORD="${clickhouse_password}" TRACKWAY_IMAGE="${TRACKWAY_IMAGE}" docker --config "${DOCKER_CONFIG}" compose \
-              --project-name "${COMPOSE_PROJECT_NAME}" \
-              -f "${DEPLOY_DIR}/docker-compose.yml" ps
-            CLICKHOUSE_DB="${clickhouse_db}" CLICKHOUSE_USER="${clickhouse_user}" CLICKHOUSE_PASSWORD="${clickhouse_password}" TRACKWAY_IMAGE="${TRACKWAY_IMAGE}" docker --config "${DOCKER_CONFIG}" compose \
-              --project-name "${COMPOSE_PROJECT_NAME}" \
-              -f "${DEPLOY_DIR}/docker-compose.yml" logs --tail=200 clickhouse
-            exit 1
           fi
 
-          CLICKHOUSE_DB="${clickhouse_db}" CLICKHOUSE_USER="${clickhouse_user}" CLICKHOUSE_PASSWORD="${clickhouse_password}" TRACKWAY_IMAGE="${TRACKWAY_IMAGE}" docker --config "${DOCKER_CONFIG}" compose \
-            --project-name "${COMPOSE_PROJECT_NAME}" \
-            -f "${DEPLOY_DIR}/docker-compose.yml" \
-            pull trackway
-
-          CLICKHOUSE_DB="${clickhouse_db}" CLICKHOUSE_USER="${clickhouse_user}" CLICKHOUSE_PASSWORD="${clickhouse_password}" TRACKWAY_IMAGE="${TRACKWAY_IMAGE}" docker --config "${DOCKER_CONFIG}" compose \
-            --project-name "${COMPOSE_PROJECT_NAME}" \
-            -f "${DEPLOY_DIR}/docker-compose.yml" \
-            up -d trackway --remove-orphans
+          compose_with_env pull trackway
+          compose_with_env up -d trackway --remove-orphans
 
           for _ in $(seq 1 45); do
             if curl -fsS "${HEALTHCHECK_URL}" >/dev/null; then
