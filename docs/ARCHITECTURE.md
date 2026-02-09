@@ -34,7 +34,7 @@ internal/tracker
 5. Dashboard reads state/log data via `Service` query methods.
 
 Concrete runtime adapters:
-- Logs: `logstore.NewClickHouse(...)` in production (memory backend for tests).
+- Logs: `logstore.NewSQLite(...)` in production (memory backend for tests).
 - Dashboard: Go `net/http` serves embedded Astro `frontend/dist` assets.
 - Auth: one-time `/authme` token -> session cookie; optional Telegram Mini App auto-auth.
 
@@ -61,7 +61,7 @@ Concrete runtime adapters:
 
 ### `logstore`
 - Owns storage backend contract (`append`, `readSince`).
-- ClickHouse backend is append/query only; schema bootstrap is isolated here.
+- SQLite backend is production default (small footprint, local file).
 - Keeps read model stable (`[]Row`) so tracker/dashboard stay storage-agnostic.
 
 ### `dashboard`

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"path"
@@ -24,6 +25,9 @@ import (
 const (
 	sessionCookieName = "trackway_dashboard_session"
 	sessionMaxAge     = 24 * time.Hour
+	maxJSONBodySize   = 16 * 1024
+	maxFormBodySize   = 4 * 1024
+	requestIDHeader   = "X-Request-ID"
 )
 
 //go:embed all:frontend/dist
@@ -37,19 +41,22 @@ type DataProvider interface {
 }
 
 type Server struct {
-	logger       *slog.Logger
-	provider     DataProvider
-	auth         *authManager
-	miniApp      *miniAppVerifier
-	miniAppOn    bool
-	listenAddr   string
-	publicURL    string
-	secureCookie bool
-	static       fs.FS
-	httpServer   *http.Server
+	logger                *slog.Logger
+	provider              DataProvider
+	auth                  *authManager
+	miniApp               *miniAppVerifier
+	miniAppOn             bool
+	allowedTelegramUserID int64
+	listenAddr            string
+	publicURL             string
+	secureCookie          bool
+	static                fs.FS
+	httpServer            *http.Server
+	authRateLimiter       *rateLimiter
+	mutationRateLimiter   *rateLimiter
 }
 
-func New(cfg config.Dashboard, botToken string, provider DataProvider) (*Server, error) {
+func New(cfg config.Dashboard, botToken string, provider DataProvider, allowedTelegramUserID ...int64) (*Server, error) {
 	if provider == nil {
 		return nil, errors.New("dashboard data provider is required")
 	}
@@ -64,16 +71,24 @@ func New(cfg config.Dashboard, botToken string, provider DataProvider) (*Server,
 		tokenTTL = 5 * time.Minute
 	}
 
+	allowedUserID := int64(0)
+	if len(allowedTelegramUserID) > 0 {
+		allowedUserID = allowedTelegramUserID[0]
+	}
+
 	srv := &Server{
-		logger:       slog.Default(),
-		provider:     provider,
-		auth:         newAuthManager(tokenTTL, sessionMaxAge),
-		miniApp:      newMiniAppVerifier(botToken, time.Duration(cfg.MiniAppMaxAgeSec)*time.Second),
-		miniAppOn:    cfg.MiniAppEnabled,
-		listenAddr:   cfg.ListenAddress,
-		publicURL:    strings.TrimRight(cfg.PublicURL, "/"),
-		secureCookie: cfg.SecureCookie,
-		static:       staticFS,
+		logger:                slog.Default(),
+		provider:              provider,
+		auth:                  newAuthManager(tokenTTL, sessionMaxAge),
+		miniApp:               newMiniAppVerifier(botToken, time.Duration(cfg.MiniAppMaxAgeSec)*time.Second),
+		miniAppOn:             cfg.MiniAppEnabled,
+		allowedTelegramUserID: allowedUserID,
+		listenAddr:            cfg.ListenAddress,
+		publicURL:             strings.TrimRight(cfg.PublicURL, "/"),
+		secureCookie:          cfg.SecureCookie,
+		static:                staticFS,
+		authRateLimiter:       newRateLimiter(20, time.Minute),
+		mutationRateLimiter:   newRateLimiter(60, time.Minute),
 	}
 
 	mux := http.NewServeMux()
@@ -88,10 +103,96 @@ func New(cfg config.Dashboard, botToken string, provider DataProvider) (*Server,
 	mux.Handle("/", srv.staticHandler())
 
 	srv.httpServer = &http.Server{
-		Addr:    srv.listenAddr,
-		Handler: mux,
+		Addr:              srv.listenAddr,
+		Handler:           srv.withMiddlewares(mux),
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
 	return srv, nil
+}
+
+type statusWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (w *statusWriter) WriteHeader(code int) {
+	w.status = code
+	w.ResponseWriter.WriteHeader(code)
+}
+
+func (s *Server) withMiddlewares(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		startedAt := time.Now().UTC()
+		requestID := requestIDFromRequest(r)
+		w.Header().Set(requestIDHeader, requestID)
+		s.setSecurityHeaders(w)
+
+		statusCapture := &statusWriter{ResponseWriter: w, status: http.StatusOK}
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				s.logger.Error("http panic recovered", "request_id", requestID, "panic", recovered)
+				writeJSON(statusCapture, http.StatusInternalServerError, map[string]any{
+					"error":      "internal server error",
+					"request_id": requestID,
+				})
+			}
+		}()
+		next.ServeHTTP(statusCapture, r)
+
+		s.logger.Info(
+			"http request",
+			"request_id", requestID,
+			"method", r.Method,
+			"path", safeRequestPath(r.URL.Path),
+			"status", statusCapture.status,
+			"duration_ms", time.Since(startedAt).Milliseconds(),
+			"remote_addr", sanitizeRemoteAddr(r.RemoteAddr),
+		)
+	})
+}
+
+func requestIDFromRequest(r *http.Request) string {
+	value := strings.TrimSpace(r.Header.Get(requestIDHeader))
+	if value != "" {
+		return value
+	}
+	token, err := randomToken(12)
+	if err != nil {
+		return strconv.FormatInt(time.Now().UTC().UnixNano(), 10)
+	}
+	return token
+}
+
+func safeRequestPath(rawPath string) string {
+	clean := strings.TrimSpace(rawPath)
+	if clean == "" {
+		return "/"
+	}
+	return clean
+}
+
+func sanitizeRemoteAddr(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "unknown"
+	}
+	host, _, err := net.SplitHostPort(raw)
+	if err == nil && host != "" {
+		return host
+	}
+	return raw
+}
+
+func (s *Server) setSecurityHeaders(w http.ResponseWriter) {
+	headers := w.Header()
+	headers.Set("X-Content-Type-Options", "nosniff")
+	headers.Set("Referrer-Policy", "no-referrer")
+	headers.Set("X-Frame-Options", "SAMEORIGIN")
+	headers.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+	headers.Set("Cross-Origin-Opener-Policy", "same-origin")
 }
 
 func (s *Server) ListenAndServe(ctx context.Context) error {
@@ -170,19 +271,107 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+func (s *Server) requireSameOrigin(w http.ResponseWriter, r *http.Request) bool {
+	origin := strings.TrimSpace(r.Header.Get("Origin"))
+	if origin == "" {
+		return true
+	}
+
+	originURL, err := url.Parse(origin)
+	if err != nil || originURL.Host == "" {
+		writeJSON(w, http.StatusForbidden, map[string]any{
+			"error": "forbidden cross-origin request",
+		})
+		return false
+	}
+
+	requestHost := strings.TrimSpace(r.Host)
+	requestScheme := forwardedScheme(r)
+	if !sameHost(originURL.Host, originURL.Scheme, requestHost, requestScheme) || !strings.EqualFold(originURL.Scheme, requestScheme) {
+		writeJSON(w, http.StatusForbidden, map[string]any{
+			"error": "forbidden cross-origin request",
+		})
+		return false
+	}
+	return true
+}
+
+func sameHost(left, leftScheme, right, rightScheme string) bool {
+	leftHost, leftPort := splitHostPort(left, leftScheme)
+	rightHost, rightPort := splitHostPort(right, rightScheme)
+	return strings.EqualFold(leftHost, rightHost) && leftPort == rightPort
+}
+
+func splitHostPort(rawHost, scheme string) (string, string) {
+	host := strings.TrimSpace(rawHost)
+	if host == "" {
+		return "", ""
+	}
+
+	if h, p, err := net.SplitHostPort(host); err == nil {
+		return h, p
+	}
+	defaultPort := "80"
+	if strings.EqualFold(scheme, "https") {
+		defaultPort = "443"
+	}
+	return host, defaultPort
+}
+
+func forwardedScheme(r *http.Request) string {
+	if v := strings.ToLower(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto"))); v == "https" || v == "http" {
+		return v
+	}
+	if r.TLS != nil {
+		return "https"
+	}
+	return "http"
+}
+
+func (s *Server) enforceRateLimit(w http.ResponseWriter, r *http.Request, limiter *rateLimiter) bool {
+	clientID := sanitizeRemoteAddr(r.RemoteAddr)
+	if limiter.Allow(time.Now().UTC(), clientID) {
+		return true
+	}
+	writeJSON(w, http.StatusTooManyRequests, map[string]any{
+		"error": "too many requests",
+	})
+	return false
+}
+
 func (s *Server) handleAuthVerify(w http.ResponseWriter, r *http.Request) {
-	token := strings.TrimSpace(r.FormValue("token"))
-	if token == "" {
-		http.Error(w, "missing token", http.StatusBadRequest)
+	if !s.enforceRateLimit(w, r, s.authRateLimiter) {
 		return
 	}
+	var token string
 
 	switch r.Method {
 	case http.MethodGet:
+		token = strings.TrimSpace(r.URL.Query().Get("token"))
+		if token == "" {
+			http.Error(w, "missing token", http.StatusBadRequest)
+			return
+		}
 		s.renderVerifyPage(w, token)
 		return
 	case http.MethodPost:
-		// proceed to token consumption
+		if !s.requireSameOrigin(w, r) {
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, maxFormBodySize)
+		if err := r.ParseForm(); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]any{
+				"error": "invalid auth request",
+			})
+			return
+		}
+		token = strings.TrimSpace(r.PostFormValue("token"))
+		if token == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]any{
+				"error": "missing token",
+			})
+			return
+		}
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -218,6 +407,17 @@ func (s *Server) renderVerifyPage(w http.ResponseWriter, token string) {
 }
 
 func (s *Server) handleAuthLogout(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.requireSameOrigin(w, r) {
+		return
+	}
+	if !s.enforceRateLimit(w, r, s.authRateLimiter) {
+		return
+	}
+
 	sessionID, ok := s.sessionIDFromRequest(r)
 	if ok {
 		s.auth.RevokeSession(sessionID)
@@ -328,20 +528,32 @@ func (s *Server) handleTargets(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	case http.MethodPost:
+		if !s.requireSameOrigin(w, r) {
+			return
+		}
+		if !s.enforceRateLimit(w, r, s.mutationRateLimiter) {
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, maxJSONBodySize)
+		defer r.Body.Close()
+
 		var payload struct {
 			Name    string `json:"name"`
 			Address string `json:"address"`
 			Port    int    `json:"port"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		decoder := json.NewDecoder(r.Body)
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&payload); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]any{
 				"error": "invalid json body",
 			})
 			return
 		}
 		if err := s.provider.UpsertTarget(payload.Name, payload.Address, payload.Port); err != nil {
+			s.logger.Warn("target upsert rejected", "error", err)
 			writeJSON(w, http.StatusBadRequest, map[string]any{
-				"error": err.Error(),
+				"error": "invalid target payload",
 			})
 			return
 		}
@@ -350,6 +562,12 @@ func (s *Server) handleTargets(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	case http.MethodDelete:
+		if !s.requireSameOrigin(w, r) {
+			return
+		}
+		if !s.enforceRateLimit(w, r, s.mutationRateLimiter) {
+			return
+		}
 		name := strings.TrimSpace(r.URL.Query().Get("name"))
 		if name == "" {
 			writeJSON(w, http.StatusBadRequest, map[string]any{
@@ -358,8 +576,9 @@ func (s *Server) handleTargets(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := s.provider.DeleteTarget(name); err != nil {
+			s.logger.Warn("target delete rejected", "error", err)
 			writeJSON(w, http.StatusBadRequest, map[string]any{
-				"error": err.Error(),
+				"error": "invalid target name",
 			})
 			return
 		}
@@ -378,17 +597,27 @@ func (s *Server) handleTelegramMiniAppAuth(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if !s.requireSameOrigin(w, r) {
+		return
+	}
+	if !s.enforceRateLimit(w, r, s.authRateLimiter) {
+		return
+	}
 	if !s.miniAppOn || s.miniApp == nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{
 			"error": "mini app auth is disabled",
 		})
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxJSONBodySize)
+	defer r.Body.Close()
 
 	var payload struct {
 		InitData string `json:"init_data"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&payload); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{
 			"error": "invalid json body",
 		})
@@ -396,8 +625,16 @@ func (s *Server) handleTelegramMiniAppAuth(w http.ResponseWriter, r *http.Reques
 	}
 	user, err := s.miniApp.Verify(payload.InitData, time.Now().UTC())
 	if err != nil {
+		s.logger.Warn("mini app auth failed", "error", err)
 		writeJSON(w, http.StatusUnauthorized, map[string]any{
-			"error": err.Error(),
+			"error": "mini app auth failed",
+		})
+		return
+	}
+	if s.allowedTelegramUserID != 0 && user.ID != s.allowedTelegramUserID {
+		s.logger.Warn("mini app auth forbidden", "user_id", user.ID)
+		writeJSON(w, http.StatusForbidden, map[string]any{
+			"error": "telegram user is not allowed",
 		})
 		return
 	}

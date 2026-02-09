@@ -8,16 +8,12 @@ import (
 	"time"
 )
 
-type ClickHouseOptions struct {
-	Addr         string
-	Database     string
-	Username     string
-	Password     string
-	Table        string
-	Secure       bool
-	DialTimeout  time.Duration
-	MaxOpenConns int
-	MaxIdleConns int
+type SQLiteOptions struct {
+	Path          string
+	RetentionDays int
+	BusyTimeoutMS int
+	MaxOpenConns  int
+	MaxIdleConns  int
 }
 
 type Store struct {
@@ -61,12 +57,12 @@ func NewMemory() (*Store, error) {
 	}, nil
 }
 
-func NewClickHouse(options ClickHouseOptions) (*Store, error) {
-	ch, err := newClickHouseBackend(options)
+func NewSQLite(options SQLiteOptions) (*Store, error) {
+	sqliteBackend, err := newSQLiteBackend(options)
 	if err != nil {
 		return nil, err
 	}
-	return &Store{backend: ch}, nil
+	return &Store{backend: sqliteBackend}, nil
 }
 
 func (s *Store) Append(targetName, address string, port int, status bool, reason string) error {

@@ -22,7 +22,7 @@ import (
 func main() {
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
 
-	cfgPath := envOrDefault("CONFIG_PATH", "config.yaml")
+	cfgPath := envOrDefault("CONFIG_PATH", "config.json")
 
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
@@ -30,17 +30,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	store, err := logstore.NewClickHouse(logstore.ClickHouseOptions{
-		Addr:         cfg.Storage.ClickHouse.Addr,
-		Database:     cfg.Storage.ClickHouse.Database,
-		Username:     cfg.Storage.ClickHouse.Username,
-		Password:     cfg.Storage.ClickHouse.Password,
-		Table:        cfg.Storage.ClickHouse.Table,
-		Secure:       cfg.Storage.ClickHouse.Secure,
-		DialTimeout:  time.Duration(cfg.Storage.ClickHouse.DialTimeoutSeconds) * time.Second,
-		MaxOpenConns: cfg.Storage.ClickHouse.MaxOpenConns,
-		MaxIdleConns: cfg.Storage.ClickHouse.MaxIdleConns,
-	})
+	store, err := initStore(cfg)
 	if err != nil {
 		fmt.Println("storage init error:", err)
 		os.Exit(1)
@@ -66,7 +56,11 @@ func main() {
 	svc := tracker.New(cfg, store, client)
 	var dash *dashboard.Server
 	if cfg.Dashboard.Enabled {
-		dash, err = dashboard.New(cfg.Dashboard, cfg.Bot.Token, svc)
+		allowedMiniAppUserID := int64(0)
+		if cfg.Bot.ChatID > 0 {
+			allowedMiniAppUserID = cfg.Bot.ChatID
+		}
+		dash, err = dashboard.New(cfg.Dashboard, cfg.Bot.Token, svc, allowedMiniAppUserID)
 		if err != nil {
 			fmt.Println("dashboard init error:", err)
 			os.Exit(1)
@@ -110,6 +104,19 @@ func main() {
 	client.Start(ctx)
 	wg.Wait()
 	sendStatus(client, "<b>INFO</b>\nport tracker stopped")
+}
+
+func initStore(cfg config.Config) (*logstore.Store, error) {
+	if cfg.Storage.Driver != "sqlite" {
+		return nil, fmt.Errorf("unsupported storage driver: %s", cfg.Storage.Driver)
+	}
+	return logstore.NewSQLite(logstore.SQLiteOptions{
+		Path:          cfg.Storage.SQLite.Path,
+		RetentionDays: cfg.Storage.SQLite.RetentionDays,
+		BusyTimeoutMS: cfg.Storage.SQLite.BusyTimeoutMS,
+		MaxOpenConns:  cfg.Storage.SQLite.MaxOpenConns,
+		MaxIdleConns:  cfg.Storage.SQLite.MaxIdleConns,
+	})
 }
 
 func envOrDefault(name string, fallback string) string {

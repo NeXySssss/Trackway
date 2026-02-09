@@ -54,6 +54,12 @@ func (h *CommandHandler) HandleUpdate(ctx context.Context, update *models.Update
 	if !ok {
 		return
 	}
+	if !h.isChatAllowed(msg.Chat.ID) {
+		if h.notifier != nil {
+			_ = h.notifier.SendHTML(ctx, msg.Chat.ID, "This bot command is not available in this chat.")
+		}
+		return
+	}
 
 	var response string
 	switch command {
@@ -179,7 +185,7 @@ func (h *CommandHandler) logsMessages(trackName string) []string {
 }
 
 func (h *CommandHandler) authLinkText(chatID int64) string {
-	if h.allowedChat != 0 && chatID != h.allowedChat {
+	if !h.isChatAllowed(chatID) {
 		return "This command is not available in this chat."
 	}
 
@@ -196,6 +202,13 @@ func (h *CommandHandler) authLinkText(chatID int64) string {
 	}
 	escaped := util.HTMLEscape(link)
 	return fmt.Sprintf("<b>Dashboard auth</b>\n<a href=\"%s\">Authorize dashboard</a>\n<code>%s</code>", escaped, escaped)
+}
+
+func (h *CommandHandler) isChatAllowed(chatID int64) bool {
+	if h.allowedChat == 0 {
+		return true
+	}
+	return chatID == h.allowedChat
 }
 
 func parseCommand(text string) (string, string, bool) {

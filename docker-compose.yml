@@ -1,55 +1,35 @@
 name: trackway
 
 services:
-  clickhouse:
-    image: clickhouse/clickhouse-server:24.8
-    container_name: trackway-clickhouse
-    restart: unless-stopped
-    environment:
-      CLICKHOUSE_DB: "${CLICKHOUSE_DB:-trackway}"
-      CLICKHOUSE_USER: "${CLICKHOUSE_USER:-default}"
-      CLICKHOUSE_PASSWORD: "${CLICKHOUSE_PASSWORD:-}"
-      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
-    volumes:
-      - clickhouse-data:/var/lib/clickhouse
-    healthcheck:
-      test: ["CMD", "clickhouse-client", "--host=127.0.0.1", "--query=SELECT 1"]
-      start_period: 40s
-      interval: 5s
-      timeout: 5s
-      retries: 30
-    networks:
-      - trackway-net
-
   trackway:
     build: .
     image: "${TRACKWAY_IMAGE:-trackway:latest}"
     container_name: trackway
     restart: unless-stopped
-    depends_on:
-      clickhouse:
-        condition: service_healthy
     read_only: true
     tmpfs:
       - /tmp
     environment:
-      CONFIG_PATH: /app/config.yaml
-      CLICKHOUSE_ADDR: "${CLICKHOUSE_ADDR:-clickhouse:9000}"
-      CLICKHOUSE_DATABASE: "${CLICKHOUSE_DB:-trackway}"
-      CLICKHOUSE_USERNAME: "${CLICKHOUSE_USER:-default}"
-      CLICKHOUSE_PASSWORD: "${CLICKHOUSE_PASSWORD:-}"
+      CONFIG_PATH: /app/config.json
+      STORAGE_DRIVER: "${STORAGE_DRIVER:-sqlite}"
+      SQLITE_PATH: "${SQLITE_PATH:-/data/trackway.db}"
+      SQLITE_RETENTION_DAYS: "${SQLITE_RETENTION_DAYS:-5}"
+      SQLITE_BUSY_TIMEOUT_MS: "${SQLITE_BUSY_TIMEOUT_MS:-5000}"
+      SQLITE_MAX_OPEN_CONNS: "${SQLITE_MAX_OPEN_CONNS:-1}"
+      SQLITE_MAX_IDLE_CONNS: "${SQLITE_MAX_IDLE_CONNS:-1}"
       TRACKWAY_CONFIG_JSON: "${TRACKWAY_CONFIG_JSON:-}"
       TRACKWAY_CONFIG_JSON_B64: "${TRACKWAY_CONFIG_JSON_B64:-}"
     ports:
       - "${TRACKWAY_BIND_IP:-127.0.0.1}:${TRACKWAY_BIND_PORT:-8083}:8080"
     volumes:
-      - "${TRACKWAY_CONFIG_PATH:-./config.yaml}:/app/config.yaml:ro"
+      - "${TRACKWAY_CONFIG_PATH:-./config.json}:/app/config.json:ro"
+      - trackway-data:/data
     networks:
       - trackway-net
 
 volumes:
-  clickhouse-data:
-    name: trackway-clickhouse-data
+  trackway-data:
+    name: trackway-data
 
 networks:
   trackway-net:

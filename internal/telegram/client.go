@@ -21,6 +21,9 @@ type Client struct {
 }
 
 func New(token string, chatID int64, handler UpdateHandler) (*Client, error) {
+	if handler == nil {
+		handler = func(context.Context, *models.Update) {}
+	}
 	b, err := tgbot.New(
 		token,
 		tgbot.WithDefaultHandler(func(ctx context.Context, _ *tgbot.Bot, update *models.Update) {

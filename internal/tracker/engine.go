@@ -16,6 +16,8 @@ import (
 	"trackway/internal/logstore"
 )
 
+const maxParallelChecksHardLimit = 256
+
 type MonitorEngine struct {
 	logs   *logstore.Store
 	logger *slog.Logger
@@ -337,6 +339,9 @@ func defaultWorkers(value int, targetCount int) int {
 	}
 	if value < 1 {
 		value = 1
+	}
+	if value > maxParallelChecksHardLimit {
+		value = maxParallelChecksHardLimit
 	}
 	return value
 }

@@ -1,19 +1,17 @@
-# Trackway CI/CD and Auto-Deploy Guide (Debian 13)
+# Trackway CI/CD and Auto-Deploy Guide (Debian 12/13)
 
-This guide sets up:
+This setup provides:
 - GitHub Actions CI (`go test` + `go build`)
-- Build and push Trackway image to GHCR
-- Auto-deploy over SSH to your server on `main`
-- ClickHouse backups before each deploy and nightly backup
+- build/push image to GHCR
+- auto-deploy over SSH on `main`
+- SQLite default storage (very low RAM footprint)
 
-## 1. What is added in repo
+## 1. What is in repo
 
-- CI/CD workflow: `.github/workflows/ci-cd.yml`
-- Nightly backup workflow: `.github/workflows/clickhouse-backup.yml`
-- Backup script: `scripts/backup-clickhouse.sh`
-- Restore script: `scripts/restore-clickhouse.sh`
+- Workflow: `.github/workflows/ci-cd.yml`
+- Runtime compose: `docker-compose.yml`
 
-## 2. Debian 13 server prep
+## 2. Prepare target server
 
 Run as root (or with `sudo`):
 
@@ -24,62 +22,13 @@ apt install -y docker.io docker-compose-plugin || apt install -y docker.io docke
 systemctl enable --now docker
 ```
 
-Create deployment directories:
+Create deploy directory:
 
 ```bash
-mkdir -p /opt/trackway/backups
+mkdir -p /opt/trackway
 ```
 
-## 3. Install GitHub self-hosted runner (if not already)
-
-Create dedicated runner user:
-
-```bash
-useradd -m -s /bin/bash actions || true
-usermod -aG docker actions
-chown -R actions:actions /opt/trackway
-```
-
-Download runner (replace version if newer):
-
-```bash
-su - actions -c '
-set -e
-mkdir -p ~/actions-runner
-cd ~/actions-runner
-curl -L -o actions-runner.tar.gz https://github.com/actions/runner/releases/download/v2.323.0/actions-runner-linux-x64-2.323.0.tar.gz
-tar xzf actions-runner.tar.gz
-'
-```
-
-Generate a runner token in GitHub:
-- Repo -> `Settings` -> `Actions` -> `Runners` -> `New self-hosted runner`.
-
-Configure runner:
-
-```bash
-su - actions -c '
-cd ~/actions-runner
-./config.sh \
-  --url https://github.com/<OWNER>/<REPO> \
-  --token <RUNNER_TOKEN> \
-  --labels self-hosted,linux,x64 \
-  --unattended
-'
-```
-
-Install and start service:
-
-```bash
-/home/actions/actions-runner/svc.sh install actions
-/home/actions/actions-runner/svc.sh start
-```
-
-Verify in GitHub UI that runner is online.
-
-## 4. Prepare SSH deploy access
-
-Create deploy user on target server:
+## 3. SSH deploy user
 
 ```bash
 useradd -m -s /bin/bash deploy || true
@@ -91,14 +40,16 @@ chmod 600 /home/deploy/.ssh/authorized_keys
 chown -R deploy:deploy /home/deploy/.ssh
 ```
 
-Generate key pair on runner host (or secure workstation):
+## 4. Deploy keypair
+
+Generate on your secure host:
 
 ```bash
 ssh-keygen -t ed25519 -C "trackway-github-actions" -f ~/.ssh/trackway_deploy -N ""
 cat ~/.ssh/trackway_deploy.pub
 ```
 
-Add the printed public key to server:
+Add pubkey on server:
 
 ```bash
 echo "PASTE_PUBLIC_KEY_HERE" >> /home/deploy/.ssh/authorized_keys
@@ -106,120 +57,99 @@ chown deploy:deploy /home/deploy/.ssh/authorized_keys
 chmod 600 /home/deploy/.ssh/authorized_keys
 ```
 
-## 5. Configure GitHub Secrets
+## 5. GitHub repository secrets
 
-Set these repository secrets:
-- `DEPLOY_SSH_HOST` - target host/IP (example: `185.185.68.147`)
-- `DEPLOY_SSH_USER` - SSH user (example: `deploy`)
-- `DEPLOY_SSH_PRIVATE_KEY` - full private key (`~/.ssh/trackway_deploy`)
-- `DEPLOY_SSH_PORT` - optional, default `22`
-- `DEPLOY_SSH_KNOWN_HOSTS` - optional but recommended (`ssh-keyscan -H <host>`)
-- `CLICKHOUSE_ADDR` - ClickHouse address for containers (default `clickhouse:9000`)
-- `CLICKHOUSE_DB` - ClickHouse database (default `trackway`)
-- `CLICKHOUSE_USER` - ClickHouse user (default `default`)
-- `CLICKHOUSE_PASSWORD` - ClickHouse password (recommended)
-- `TRACKWAY_CONFIG_JSON` or `TRACKWAY_CONFIG_JSON_B64` - optional runtime config as one-line JSON
-- `TRACKWAY_BIND_IP` - optional host bind IP for dashboard publish (default `127.0.0.1`)
-- `TRACKWAY_BIND_PORT` - optional host bind port for dashboard publish (default `8083`)
+Required:
+- `DEPLOY_SSH_HOST`
+- `DEPLOY_SSH_USER` (usually `deploy`)
+- `DEPLOY_SSH_PRIVATE_KEY` (contents of `~/.ssh/trackway_deploy`)
 
-GHCR login for build/push and deploy uses built-in `${{ secrets.GITHUB_TOKEN }}`.
+Optional:
+- `DEPLOY_SSH_PORT` (default `22`)
+- `DEPLOY_SSH_KNOWN_HOSTS` (recommended)
+- `TRACKWAY_CONFIG_JSON` or `TRACKWAY_CONFIG_JSON_B64`
+- `TRACKWAY_BIND_IP` (default `127.0.0.1`)
+- `TRACKWAY_BIND_PORT` (default `8083`)
+- `STORAGE_DRIVER` (default `sqlite`)
+- `SQLITE_PATH` (default `/data/trackway.db`)
+- `SQLITE_RETENTION_DAYS` (default `5`)
+- `SQLITE_BUSY_TIMEOUT_MS` (default `5000`)
+- `SQLITE_MAX_OPEN_CONNS` (default `1`)
+- `SQLITE_MAX_IDLE_CONNS` (default `1`)
 
-Legacy secret names are also accepted:
+Legacy alias secrets also work:
 - `SSH_HOST`, `SSH_USER`, `SSH_PRIVATE_KEY`, `SSH_PORT`, `SSH_KNOWN_HOSTS`
 
-Create `known_hosts` value:
+Get `known_hosts`:
 
 ```bash
 ssh-keyscan -H -p 22 <YOUR_HOST>
 ```
 
-Paste output into `DEPLOY_SSH_KNOWN_HOSTS`.
+Paste into `DEPLOY_SSH_KNOWN_HOSTS`.
 
-## 6. Configure runtime config
+## 6. Runtime config choice
 
-Choose one way:
+Use one of:
 
-### Option A (recommended): file on server
-Create `/opt/trackway/config.yaml` manually:
+### Option A (recommended): config file on server
 
 ```bash
-cp /opt/trackway/config.yaml /opt/trackway/config.yaml.bak 2>/dev/null || true
-nano /opt/trackway/config.yaml
-chmod 644 /opt/trackway/config.yaml
+nano /opt/trackway/config.json
+chmod 644 /opt/trackway/config.json
 ```
 
 ### Option B: GitHub secret
+
 Set one of:
-- `TRACKWAY_CONFIG_JSON` = one-line JSON string.
-- `TRACKWAY_CONFIG_JSON_B64` = base64-encoded JSON string.
+- `TRACKWAY_CONFIG_JSON` (one-line JSON)
+- `TRACKWAY_CONFIG_JSON_B64` (base64 JSON)
 
-Runtime JSON is passed directly to container env (`TRACKWAY_CONFIG_JSON_B64`).
-If JSON is not set, workflow falls back to `/opt/trackway/config.yaml`.
+If secret config is provided, workflow writes/uses it automatically.
 
-## 7. Enable auto-deploy
+## 7. First deploy
 
-No extra scripts needed:
-- Push to `main` triggers `.github/workflows/ci-cd.yml`.
-- It runs tests, builds/pushes image to GHCR, uploads repo to `/opt/trackway` over SSH, creates ClickHouse backup, starts ClickHouse and waits for health, validates DB credentials, then pulls and starts `trackway`.
+Push to `main` or run workflow manually.
 
-First bootstrap deployment can be run manually:
+Workflow does:
+1. tests + build
+2. image push to GHCR
+3. rsync repo to `/opt/trackway`
+4. hard-cleanup of legacy ClickHouse containers/volumes from old deployments
+5. `docker compose pull` + `docker compose up -d`
+6. checks container state is `running`
 
-```bash
-cd /opt/trackway
-TRACKWAY_IMAGE=ghcr.io/<owner>/trackway:latest docker compose --project-name trackway up -d
-```
+## 8. Verify
 
-## 8. Database safety model
-
-Protection layers in this setup:
-
-1. Stable named volume: `trackway-clickhouse-data` in `docker-compose.yml`.
-2. Deploy uses `pull + up -d` (not destructive volume recreate).
-3. Backup before each deploy (`scripts/backup-clickhouse.sh`).
-4. Nightly backup workflow (`clickhouse-backup.yml`).
-5. Old backups rotation with `BACKUP_KEEP` (default 30).
-
-Critical rule:
-- Never run `docker compose down -v` in production.
-
-## 9. Verify after deploy
+On server:
 
 ```bash
 docker compose --project-name trackway -f /opt/trackway/docker-compose.yml ps
+docker compose --project-name trackway -f /opt/trackway/docker-compose.yml logs --tail=80 trackway
 curl -fsS http://127.0.0.1:8083/healthz
-ls -lh /opt/trackway/backups
 ```
 
-Note:
-- `trackway` listens on `127.0.0.1:8083` on the host (for Caddy local reverse_proxy).
-- `clickhouse` and `trackway` are connected through shared Docker network (`trackway-net`).
-- In containerized mode, set `storage.clickhouse.addr: "clickhouse:9000"` in `/opt/trackway/config.yaml`.
+Expected:
+- `trackway` status `Up`
+- `/healthz` returns `ok`
 
-## 10. Restore ClickHouse from backup
+## 9. Caddy bind model
 
-Pick backup archive:
+- Keep `TRACKWAY_BIND_IP=127.0.0.1`
+- Keep `TRACKWAY_BIND_PORT=8083`
+- In Caddy use local upstream:
+  - `reverse_proxy 127.0.0.1:8083`
 
-```bash
-ls -1t /opt/trackway/backups/clickhouse-*.tar.gz | head
-```
+If you want Tailscale-only bind, set `TRACKWAY_BIND_IP` to your tailscale IP.
 
-Restore:
+## 10. Move deploy to new server
 
-```bash
-COMPOSE_PROJECT_NAME=trackway bash /opt/trackway/scripts/restore-clickhouse.sh \
-  /opt/trackway/backups/clickhouse-YYYYMMDDTHHMMSSZ.tar.gz \
-  /opt/trackway
-```
+1. Prepare new server (sections 2-4).
+2. Update secrets:
+   - `DEPLOY_SSH_HOST`
+   - optionally `DEPLOY_SSH_PORT`
+   - refresh `DEPLOY_SSH_KNOWN_HOSTS`
+3. Keep same config secret/file format.
+4. Push to `main`.
 
-Then verify:
-
-```bash
-docker compose --project-name trackway -f /opt/trackway/docker-compose.yml ps
-```
-
-## 11. Recommended GitHub settings
-
-- Protect `main` branch:
-  - Require PR and passing checks.
-- Keep Actions enabled for repository.
-- Ensure self-hosted runner has labels `self-hosted`, `Linux`, and `X64`.
+No DB backup migration is needed if you accept a fresh SQLite DB on new host.

@@ -257,6 +257,34 @@ func TestMiniAppAuthEndpoint(t *testing.T) {
 	}
 }
 
+func TestMiniAppAuthEndpointRejectsUnexpectedUser(t *testing.T) {
+	t.Parallel()
+
+	srv, err := New(config.Dashboard{
+		ListenAddress:    ":0",
+		PublicURL:        "http://127.0.0.1:8080",
+		MiniAppEnabled:   true,
+		MiniAppMaxAgeSec: 3600,
+	}, "test-bot-token", stubProvider{}, 511741383)
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+
+	initData := buildSignedInitData("test-bot-token", time.Now().UTC(), 42)
+	body, _ := json.Marshal(map[string]string{
+		"init_data": initData,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/telegram-miniapp", strings.NewReader(string(body)))
+	req.Header.Set("Origin", "http://example.com")
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.httpServer.Handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status 403, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestFormatRowLineUsesReadableClientTime(t *testing.T) {
 	t.Parallel()
 
@@ -327,6 +355,7 @@ func TestTargetsAPIRequiresAuthAndSupportsMutations(t *testing.T) {
 
 	postReq := httptest.NewRequest(http.MethodPost, "/api/targets", strings.NewReader(`{"name":"new-api","address":"100.64.0.10","port":443}`))
 	postReq.Header.Set("Content-Type", "application/json")
+	postReq.Header.Set("Origin", "http://example.com")
 	postReq.AddCookie(sessionCookie)
 	postRec := httptest.NewRecorder()
 	srv.httpServer.Handler.ServeHTTP(postRec, postReq)
@@ -338,6 +367,7 @@ func TestTargetsAPIRequiresAuthAndSupportsMutations(t *testing.T) {
 	}
 
 	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/targets?name=new-api", nil)
+	deleteReq.Header.Set("Origin", "http://example.com")
 	deleteReq.AddCookie(sessionCookie)
 	deleteRec := httptest.NewRecorder()
 	srv.httpServer.Handler.ServeHTTP(deleteRec, deleteReq)
@@ -346,5 +376,59 @@ func TestTargetsAPIRequiresAuthAndSupportsMutations(t *testing.T) {
 	}
 	if provider.lastDelete != "new-api" {
 		t.Fatalf("expected delete name new-api, got %q", provider.lastDelete)
+	}
+}
+
+func TestTargetsMutationRejectsCrossOrigin(t *testing.T) {
+	t.Parallel()
+
+	provider := &mutableProvider{}
+	srv, err := New(config.Dashboard{
+		ListenAddress: ":0",
+		PublicURL:     "http://127.0.0.1:8080",
+	}, "test-bot-token", provider)
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+
+	sessionID, err := srv.auth.CreateSession(time.Now().UTC())
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/targets", strings.NewReader(`{"name":"new-api","address":"100.64.0.10","port":443}`))
+	req.Header.Set("Origin", "https://evil.example")
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sessionID})
+	rec := httptest.NewRecorder()
+	srv.httpServer.Handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestSecurityHeadersAndRequestID(t *testing.T) {
+	t.Parallel()
+
+	srv, err := New(config.Dashboard{
+		ListenAddress: ":0",
+		PublicURL:     "http://127.0.0.1:8080",
+	}, "test-bot-token", stubProvider{})
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	rec := httptest.NewRecorder()
+	srv.httpServer.Handler.ServeHTTP(rec, req)
+
+	if got := rec.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Fatalf("expected nosniff header, got %q", got)
+	}
+	if got := rec.Header().Get("Referrer-Policy"); got != "no-referrer" {
+		t.Fatalf("expected referrer-policy header, got %q", got)
+	}
+	if got := strings.TrimSpace(rec.Header().Get("X-Request-ID")); got == "" {
+		t.Fatal("expected generated request id header")
 	}
 }

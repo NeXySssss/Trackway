@@ -34,11 +34,30 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Run tests
+      - name: Format check
+        run: |
+          if [ -n "$(gofmt -l .)" ]; then
+            echo "gofmt check failed; run 'make format'"
+            gofmt -l .
+            exit 1
+          fi
+
+      - name: Lint
+        run: go vet ./...
+
+      - name: Typecheck
+        run: go test -run '^$' ./...
+
+      - name: Test
         run: go test ./...
 
       - name: Build
         run: go build ./...
+
+      - name: Security
+        run: |
+          go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+          go run ./cmd/secretscan
 
   image:
     name: Build and Push Image
@@ -98,17 +117,19 @@ jobs:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     env:
       DEPLOY_DIR: /opt/trackway
-      BACKUP_DIR: /opt/trackway/backups
-      TRACKWAY_CONFIG_PATH: /opt/trackway/config.yaml
+      TRACKWAY_CONFIG_PATH: /opt/trackway/config.json
       COMPOSE_PROJECT_NAME: trackway
-      BACKUP_KEEP: "30"
       TRACKWAY_IMAGE: ${{ needs.image.outputs.image_latest }}
+
       TRACKWAY_BIND_IP: ${{ secrets.TRACKWAY_BIND_IP || '127.0.0.1' }}
       TRACKWAY_BIND_PORT: ${{ secrets.TRACKWAY_BIND_PORT || '8083' }}
-      CLICKHOUSE_ADDR: ${{ secrets.CLICKHOUSE_ADDR || 'clickhouse:9000' }}
-      CLICKHOUSE_DB: ${{ secrets.CLICKHOUSE_DB || 'trackway' }}
-      CLICKHOUSE_USER: ${{ secrets.CLICKHOUSE_USER || 'default' }}
-      CLICKHOUSE_PASSWORD: ${{ secrets.CLICKHOUSE_PASSWORD }}
+
+      STORAGE_DRIVER: ${{ secrets.STORAGE_DRIVER || 'sqlite' }}
+      SQLITE_PATH: ${{ secrets.SQLITE_PATH || '/data/trackway.db' }}
+      SQLITE_RETENTION_DAYS: ${{ secrets.SQLITE_RETENTION_DAYS || '5' }}
+      SQLITE_BUSY_TIMEOUT_MS: ${{ secrets.SQLITE_BUSY_TIMEOUT_MS || '5000' }}
+      SQLITE_MAX_OPEN_CONNS: ${{ secrets.SQLITE_MAX_OPEN_CONNS || '1' }}
+      SQLITE_MAX_IDLE_CONNS: ${{ secrets.SQLITE_MAX_IDLE_CONNS || '1' }}
 
       DEPLOY_SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST || secrets.SSH_HOST }}
       DEPLOY_SSH_USER: ${{ secrets.DEPLOY_SSH_USER || secrets.SSH_USER || 'deploy' }}
@@ -118,7 +139,6 @@ jobs:
 
       GHCR_USERNAME: ${{ github.actor }}
       GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      TRACKWAY_CONFIG_YAML: ${{ secrets.TRACKWAY_CONFIG_YAML }}
       TRACKWAY_CONFIG_JSON: ${{ secrets.TRACKWAY_CONFIG_JSON }}
       TRACKWAY_CONFIG_JSON_B64: ${{ secrets.TRACKWAY_CONFIG_JSON_B64 }}
     steps:
@@ -148,18 +168,6 @@ jobs:
             echo "GITHUB_TOKEN is empty." >&2
             exit 1
           fi
-          if [ -z "${CLICKHOUSE_ADDR}" ]; then
-            echo "CLICKHOUSE_ADDR is empty." >&2
-            exit 1
-          fi
-          if [ -z "${CLICKHOUSE_DB}" ]; then
-            echo "CLICKHOUSE_DB is empty." >&2
-            exit 1
-          fi
-          if [ -z "${CLICKHOUSE_USER}" ]; then
-            echo "CLICKHOUSE_USER is empty." >&2
-            exit 1
-          fi
 
       - name: Setup SSH key
         run: |
@@ -187,7 +195,7 @@ jobs:
           ssh -i "${HOME}/.ssh/id_trackway_deploy" -p "${port}" \
             -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
             "${DEPLOY_SSH_USER}@${DEPLOY_SSH_HOST}" \
-            "mkdir -p '${DEPLOY_DIR}' '${BACKUP_DIR}'"
+            "mkdir -p '${DEPLOY_DIR}'"
 
       - name: Sync repo to server
         run: |
@@ -195,21 +203,10 @@ jobs:
           port="${DEPLOY_SSH_PORT:-22}"
           rsync -az --delete \
             --exclude '.git' \
-            --exclude 'config.yaml' \
+            --exclude 'config.json' \
             --exclude 'backups/' \
             -e "ssh -i ${HOME}/.ssh/id_trackway_deploy -p ${port} -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes" \
             "${GITHUB_WORKSPACE}/" "${DEPLOY_SSH_USER}@${DEPLOY_SSH_HOST}:${DEPLOY_DIR}/"
-
-      - name: Write runtime config from secret (optional)
-        if: ${{ env.TRACKWAY_CONFIG_YAML != '' }}
-        run: |
-          set -euo pipefail
-          port="${DEPLOY_SSH_PORT:-22}"
-          config_b64="$(printf '%s' "${TRACKWAY_CONFIG_YAML}" | base64 -w0)"
-          ssh -i "${HOME}/.ssh/id_trackway_deploy" -p "${port}" \
-            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
-            "${DEPLOY_SSH_USER}@${DEPLOY_SSH_HOST}" \
-            "umask 022 && printf '%s' '${config_b64}' | base64 -d > '${TRACKWAY_CONFIG_PATH}' && chmod 0644 '${TRACKWAY_CONFIG_PATH}'"
 
       - name: Deploy on server
         run: |
@@ -218,10 +215,6 @@ jobs:
 
           ghcr_user_b64="$(printf '%s' "${GHCR_USERNAME}" | base64 -w0)"
           ghcr_token_b64="$(printf '%s' "${GHCR_TOKEN}" | base64 -w0)"
-          clickhouse_addr_b64="$(printf '%s' "${CLICKHOUSE_ADDR}" | base64 -w0)"
-          clickhouse_db_b64="$(printf '%s' "${CLICKHOUSE_DB}" | base64 -w0)"
-          clickhouse_user_b64="$(printf '%s' "${CLICKHOUSE_USER}" | base64 -w0)"
-          clickhouse_password_b64="$(printf '%s' "${CLICKHOUSE_PASSWORD}" | base64 -w0)"
           runtime_config_json_b64="${TRACKWAY_CONFIG_JSON_B64}"
           if [ -z "${runtime_config_json_b64}" ] && [ -n "${TRACKWAY_CONFIG_JSON}" ]; then
             runtime_config_json_b64="$(printf '%s' "${TRACKWAY_CONFIG_JSON}" | base64 -w0)"
@@ -230,7 +223,7 @@ jobs:
           ssh -i "${HOME}/.ssh/id_trackway_deploy" -p "${port}" \
             -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
             "${DEPLOY_SSH_USER}@${DEPLOY_SSH_HOST}" \
-            "DEPLOY_DIR='${DEPLOY_DIR}' BACKUP_DIR='${BACKUP_DIR}' TRACKWAY_CONFIG_PATH='${TRACKWAY_CONFIG_PATH}' COMPOSE_PROJECT_NAME='${COMPOSE_PROJECT_NAME}' BACKUP_KEEP='${BACKUP_KEEP}' TRACKWAY_IMAGE='${TRACKWAY_IMAGE}' TRACKWAY_BIND_IP='${TRACKWAY_BIND_IP}' TRACKWAY_BIND_PORT='${TRACKWAY_BIND_PORT}' GHCR_USER_B64='${ghcr_user_b64}' GHCR_TOKEN_B64='${ghcr_token_b64}' CLICKHOUSE_ADDR_B64='${clickhouse_addr_b64}' CLICKHOUSE_DB_B64='${clickhouse_db_b64}' CLICKHOUSE_USER_B64='${clickhouse_user_b64}' CLICKHOUSE_PASSWORD_B64='${clickhouse_password_b64}' TRACKWAY_CONFIG_JSON_B64='${runtime_config_json_b64}' bash -se" <<'REMOTE'
+            "DEPLOY_DIR='${DEPLOY_DIR}' TRACKWAY_CONFIG_PATH='${TRACKWAY_CONFIG_PATH}' COMPOSE_PROJECT_NAME='${COMPOSE_PROJECT_NAME}' TRACKWAY_IMAGE='${TRACKWAY_IMAGE}' TRACKWAY_BIND_IP='${TRACKWAY_BIND_IP}' TRACKWAY_BIND_PORT='${TRACKWAY_BIND_PORT}' STORAGE_DRIVER='${STORAGE_DRIVER}' SQLITE_PATH='${SQLITE_PATH}' SQLITE_RETENTION_DAYS='${SQLITE_RETENTION_DAYS}' SQLITE_BUSY_TIMEOUT_MS='${SQLITE_BUSY_TIMEOUT_MS}' SQLITE_MAX_OPEN_CONNS='${SQLITE_MAX_OPEN_CONNS}' SQLITE_MAX_IDLE_CONNS='${SQLITE_MAX_IDLE_CONNS}' GHCR_USER_B64='${ghcr_user_b64}' GHCR_TOKEN_B64='${ghcr_token_b64}' TRACKWAY_CONFIG_JSON_B64='${runtime_config_json_b64}' bash -se" <<'REMOTE'
           set -euo pipefail
 
           decode_b64() {
@@ -239,15 +232,16 @@ jobs:
 
           ghcr_user="$(decode_b64 "${GHCR_USER_B64}")"
           ghcr_token="$(decode_b64 "${GHCR_TOKEN_B64}")"
-          clickhouse_addr="$(decode_b64 "${CLICKHOUSE_ADDR_B64}")"
-          clickhouse_db="$(decode_b64 "${CLICKHOUSE_DB_B64}")"
-          clickhouse_user="$(decode_b64 "${CLICKHOUSE_USER_B64}")"
-          clickhouse_password="$(decode_b64 "${CLICKHOUSE_PASSWORD_B64}")"
           runtime_config_json_b64="${TRACKWAY_CONFIG_JSON_B64}"
 
           if [ -z "${runtime_config_json_b64}" ] && [ ! -s "${TRACKWAY_CONFIG_PATH}" ]; then
             echo "No runtime config provided and file is missing: ${TRACKWAY_CONFIG_PATH}" >&2
-            echo "Set TRACKWAY_CONFIG_JSON(_B64) secret or provide config.yaml on server." >&2
+            echo "Set TRACKWAY_CONFIG_JSON(_B64) secret or provide config.json on server." >&2
+            exit 1
+          fi
+          if [ -z "${runtime_config_json_b64}" ] && [ ! -r "${TRACKWAY_CONFIG_PATH}" ]; then
+            echo "Config file exists but is not readable: ${TRACKWAY_CONFIG_PATH}" >&2
+            echo "Fix on server: chmod 0644 ${TRACKWAY_CONFIG_PATH}" >&2
             exit 1
           fi
           if [ -n "${runtime_config_json_b64}" ] && [ ! -e "${TRACKWAY_CONFIG_PATH}" ]; then
@@ -266,71 +260,22 @@ jobs:
           printf '%s' "${ghcr_token}" | docker --config "${DOCKER_CONFIG}" login ghcr.io -u "${ghcr_user}" --password-stdin
 
           compose_with_env() {
-            TRACKWAY_BIND_IP="${TRACKWAY_BIND_IP}" TRACKWAY_BIND_PORT="${TRACKWAY_BIND_PORT}" CLICKHOUSE_ADDR="${clickhouse_addr}" CLICKHOUSE_DB="${clickhouse_db}" CLICKHOUSE_USER="${clickhouse_user}" CLICKHOUSE_PASSWORD="${clickhouse_password}" TRACKWAY_IMAGE="${TRACKWAY_IMAGE}" TRACKWAY_CONFIG_JSON_B64="${runtime_config_json_b64}" docker --config "${DOCKER_CONFIG}" compose \
+            TRACKWAY_BIND_IP="${TRACKWAY_BIND_IP}" TRACKWAY_BIND_PORT="${TRACKWAY_BIND_PORT}" STORAGE_DRIVER="${STORAGE_DRIVER}" SQLITE_PATH="${SQLITE_PATH}" SQLITE_RETENTION_DAYS="${SQLITE_RETENTION_DAYS}" SQLITE_BUSY_TIMEOUT_MS="${SQLITE_BUSY_TIMEOUT_MS}" SQLITE_MAX_OPEN_CONNS="${SQLITE_MAX_OPEN_CONNS}" SQLITE_MAX_IDLE_CONNS="${SQLITE_MAX_IDLE_CONNS}" TRACKWAY_IMAGE="${TRACKWAY_IMAGE}" TRACKWAY_CONFIG_JSON_B64="${runtime_config_json_b64}" docker --config "${DOCKER_CONFIG}" compose \
               --project-name "${COMPOSE_PROJECT_NAME}" \
               -f "${DEPLOY_DIR}/docker-compose.yml" "$@"
           }
 
-          wait_clickhouse_healthy() {
-            clickhouse_container="$(compose_with_env ps -q clickhouse)"
-            if [ -z "${clickhouse_container}" ]; then
-              echo "Failed to resolve clickhouse container id." >&2
-              compose_with_env logs --tail=200 clickhouse
-              return 1
-            fi
-
-            clickhouse_ready=0
-            for _ in $(seq 1 90); do
-              health_status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}' "${clickhouse_container}" 2>/dev/null || echo unknown)"
-              if [ "${health_status}" = "healthy" ]; then
-                clickhouse_ready=1
-                break
-              fi
-              if [ "${health_status}" = "unhealthy" ] || [ "${health_status}" = "exited" ] || [ "${health_status}" = "dead" ]; then
-                echo "ClickHouse is ${health_status}." >&2
-                compose_with_env ps
-                compose_with_env logs --tail=200 clickhouse
-                return 1
-              fi
-              sleep 2
-            done
-
-            if [ "${clickhouse_ready}" -ne 1 ]; then
-              echo "ClickHouse did not become healthy in time." >&2
-              compose_with_env ps
-              compose_with_env logs --tail=200 clickhouse
-              return 1
-            fi
-            return 0
-          }
-
-          validate_clickhouse_auth() {
-            if [ -n "${clickhouse_password}" ]; then
-              docker exec "${clickhouse_container}" clickhouse-client \
-                --host=127.0.0.1 \
-                --user="${clickhouse_user}" \
-                --password="${clickhouse_password}" \
-                --query="SELECT 1" >/dev/null 2>&1
-              return
-            fi
-            docker exec "${clickhouse_container}" clickhouse-client \
-              --host=127.0.0.1 \
-              --user="${clickhouse_user}" \
-              --query="SELECT 1" >/dev/null 2>&1
-          }
-
-          if ! bash "${DEPLOY_DIR}/scripts/backup-clickhouse.sh" "${DEPLOY_DIR}" "${BACKUP_DIR}"; then
-            echo "WARNING: ClickHouse backup failed; continuing deployment." >&2
-          fi
-
-          compose_with_env up -d --force-recreate clickhouse
-          wait_clickhouse_healthy
-
-          if ! validate_clickhouse_auth; then
-            echo "ClickHouse auth check failed for user='${clickhouse_user}' db='${clickhouse_db}'." >&2
-            compose_with_env ps
-            compose_with_env logs --tail=200 clickhouse
-            exit 1
+          # Hard cleanup of legacy ClickHouse artifacts from previous deployments.
+          docker rm -f trackway-clickhouse >/dev/null 2>&1 || true
+          docker rm -f "${COMPOSE_PROJECT_NAME}-clickhouse" >/dev/null 2>&1 || true
+          docker rm -f "${COMPOSE_PROJECT_NAME}_clickhouse_1" >/dev/null 2>&1 || true
+          docker volume rm trackway-clickhouse-data >/dev/null 2>&1 || true
+          docker volume rm "${COMPOSE_PROJECT_NAME}-clickhouse-data" >/dev/null 2>&1 || true
+          docker volume rm "${COMPOSE_PROJECT_NAME}_clickhouse-data" >/dev/null 2>&1 || true
+          docker volume rm "${COMPOSE_PROJECT_NAME}_clickhouse_data" >/dev/null 2>&1 || true
+          legacy_compose_volumes="$(docker volume ls -q --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}" --filter "label=com.docker.compose.service=clickhouse")"
+          if [ -n "${legacy_compose_volumes}" ]; then
+            printf '%s\n' "${legacy_compose_volumes}" | xargs -r docker volume rm >/dev/null 2>&1 || true
           fi
 
           compose_with_env pull trackway
@@ -344,6 +289,7 @@ jobs:
             compose_with_env logs --tail=120 trackway
             exit 1
           fi
+
           trackway_state="$(docker inspect --format '{{.State.Status}}' "${trackway_container}" 2>/dev/null || echo unknown)"
           if [ "${trackway_state}" != "running" ]; then
             echo "Trackway container is not running after deploy (state=${trackway_state})." >&2
@@ -351,6 +297,6 @@ jobs:
             compose_with_env logs --tail=120 trackway
             exit 1
           fi
+
           echo "Deployment completed. Trackway container is running."
-          exit 0
           REMOTE

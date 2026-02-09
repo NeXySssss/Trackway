@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"trackway/internal/util"
@@ -14,6 +15,7 @@ import (
 type AlertManager struct {
 	notifier Notifier
 	logger   *slog.Logger
+	mu       sync.Mutex
 
 	pendingDown  map[string]pendingDownAlert
 	pendingGroup map[string][]pendingDownGroup
@@ -32,6 +34,8 @@ func (a *AlertManager) SendBatch(ctx context.Context, events []alertEvent) {
 	if a.notifier == nil || len(events) == 0 {
 		return
 	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
 
 	events = a.applyFastRecoveryEdits(ctx, events, 30*time.Second)
 	if len(events) == 0 {

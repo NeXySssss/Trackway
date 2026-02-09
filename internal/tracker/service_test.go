@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-telegram/bot/models"
+
 	"trackway/internal/config"
 	"trackway/internal/logstore"
 )
@@ -294,6 +296,36 @@ func TestAuthLinkTextChatRestricted(t *testing.T) {
 	text := svc.authLinkText(200)
 	if !strings.Contains(strings.ToLower(text), "not available") {
 		t.Fatalf("expected restricted chat response, got %q", text)
+	}
+}
+
+func TestHandleUpdateRejectsUnauthorizedChat(t *testing.T) {
+	t.Parallel()
+
+	store, err := logstore.New(t.TempDir())
+	if err != nil {
+		t.Fatalf("logstore init error: %v", err)
+	}
+	cfg := testConfig()
+	cfg.Bot.ChatID = 100
+	notifier := &fakeNotifier{}
+	svc := New(cfg, store, notifier)
+
+	update := &models.Update{
+		Message: &models.Message{
+			Text: "/status",
+			Chat: models.Chat{
+				ID: 200,
+			},
+		},
+	}
+	svc.HandleUpdate(context.Background(), update)
+
+	if len(notifier.replies) != 1 {
+		t.Fatalf("expected one rejection reply, got %d", len(notifier.replies))
+	}
+	if !strings.Contains(strings.ToLower(notifier.replies[0]), "not available") {
+		t.Fatalf("unexpected rejection text: %q", notifier.replies[0])
 	}
 }
 
